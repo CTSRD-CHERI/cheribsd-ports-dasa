@@ -1,0 +1,10 @@
+--- services/network/BUILD.gn.orig	2022-08-31 12:19:35 UTC
++++ services/network/BUILD.gn
+@@ -327,7 +327,6 @@ if (is_linux || is_chromeos) {
+     ]
+     deps = [
+       "//base:base",
+-      "//sandbox/linux:sandbox_services",
+       "//sandbox/policy:policy",
+     ]
+   }

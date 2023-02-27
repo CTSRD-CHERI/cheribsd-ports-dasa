@@ -22,7 +22,7 @@ WWW=		https://v8.dev/
 LICENSE=	BSD3CLAUSE
 LICENSE_FILE=	${WRKSRC}/LICENSE
 
-ONLY_FOR_ARCHS=	aarch64 amd64 i386
+ONLY_FOR_ARCHS=	arch64c aarch64 amd64 i386
 
 BUILD_DEPENDS=	binutils>=0:devel/binutils \
 		gn:devel/gn \

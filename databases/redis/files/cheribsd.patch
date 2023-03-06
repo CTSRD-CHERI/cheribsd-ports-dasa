@@ -1,0 +1,208 @@
+--- src/module.c.orig	2022-09-21 20:42:01.000000000 +0100
++++ src/module.c	2023-03-06 11:32:09.191044000 +0000
+@@ -756,7 +756,7 @@
+  * (only the main thread uses propagatePendingCommands) */
+ void moduleCreateContext(RedisModuleCtx *out_ctx, RedisModule *module, int ctx_flags) {
+     memset(out_ctx, 0 ,sizeof(RedisModuleCtx));
+-    out_ctx->getapifuncptr = (void*)(unsigned long)&RM_GetApi;
++    out_ctx->getapifuncptr = (void*)(uintptr_t)&RM_GetApi;
+     out_ctx->module = module;
+     out_ctx->flags = ctx_flags;
+     if (ctx_flags & REDISMODULE_CTX_TEMP_CLIENT)
+@@ -10873,7 +10873,7 @@
+ }
+ 
+ #define REGISTER_API(name) \
+-    moduleRegisterApi("RedisModule_" #name, (void *)(unsigned long)RM_ ## name)
++    moduleRegisterApi("RedisModule_" #name, (void *)(uintptr_t)RM_ ## name)
+ 
+ /* Global initialization at Redis startup. */
+ void moduleRegisterCoreAPI(void);
+@@ -11184,7 +11184,7 @@
+         serverLog(LL_WARNING, "Module %s failed to load: %s", path, dlerror());
+         return C_ERR;
+     }
+-    onload = (int (*)(void *, void **, int))(unsigned long) dlsym(handle,"RedisModule_OnLoad");
++    onload = (int (*)(void *, void **, int))(uintptr_t) dlsym(handle,"RedisModule_OnLoad");
+     if (onload == NULL) {
+         dlclose(handle);
+         serverLog(LL_WARNING,
+@@ -11280,7 +11280,7 @@
+ 
+     /* Give module a chance to clean up. */
+     int (*onunload)(void *);
+-    onunload = (int (*)(void *))(unsigned long) dlsym(module->handle, "RedisModule_OnUnload");
++    onunload = (int (*)(void *))(uintptr_t) dlsym(module->handle, "RedisModule_OnUnload");
+     if (onunload) {
+         RedisModuleCtx ctx;
+         moduleCreateContext(&ctx, module, REDISMODULE_CTX_TEMP_CLIENT);
+--- src/acl.c.orig	2023-03-06 11:36:32.424214000 +0000
++++ src/acl.c	2023-03-06 11:35:06.447256000 +0000
+@@ -55,7 +55,7 @@
+ 
+ static rax *commandId = NULL; /* Command name to id mapping */
+ 
+-static unsigned long nextid = 0; /* Next command id that has not been assigned */
++static uintptr_t nextid = 0; /* Next command id that has not been assigned */
+ 
+ struct ACLCategoryItem {
+     const char *name;
+@@ -1436,7 +1436,7 @@
+     raxInsert(commandId,(unsigned char*)lowername,strlen(lowername),
+               (void*)nextid,NULL);
+     sdsfree(lowername);
+-    unsigned long thisid = nextid;
++    uintptr_t thisid = nextid;
+     nextid++;
+ 
+     /* We never assign the last bit in the user commands bitmap structure,
+--- src/config.c.orig	2023-03-06 11:38:21.839207000 +0000
++++ src/config.c	2023-03-06 11:38:52.971350000 +0000
+@@ -1081,7 +1081,7 @@
+         l = listCreate();
+         dictAdd(state->option_to_line,sdsdup(option),l);
+     }
+-    listAddNodeTail(l,(void*)(long)linenum);
++    listAddNodeTail(l,(void*)(uintptr_t)linenum);
+ }
+ 
+ /* Add the specified option to the set of processed options.
+--- src/eval.c.orig	2023-03-06 11:40:01.137024000 +0000
++++ src/eval.c	2023-03-06 11:40:34.680747000 +0000
+@@ -803,7 +803,7 @@
+             serverLog(LL_WARNING,"Redis forked for debugging eval");
+         } else {
+             /* Parent */
+-            listAddNodeTail(ldb.children,(void*)(unsigned long)cp);
++            listAddNodeTail(ldb.children,(void*)(uintptr_t)cp);
+             freeClientAsync(c); /* Close the client in the parent side. */
+             return 0;
+         }
+@@ -867,7 +867,7 @@
+  * forked debugging sessions, it is removed from the children list.
+  * If the pid was found non-zero is returned. */
+ int ldbRemoveChild(pid_t pid) {
+-    listNode *ln = listSearchKey(ldb.children,(void*)(unsigned long)pid);
++    listNode *ln = listSearchKey(ldb.children,(void*)(uintptr_t)pid);
+     if (ln) {
+         listDelNode(ldb.children,ln);
+         return 1;
+--- src/networking.c.orig	2023-03-06 11:42:57.859667000 +0000
++++ src/networking.c	2023-03-06 11:43:15.731013000 +0000
+@@ -4104,7 +4104,7 @@
+         pthread_mutex_init(&io_threads_mutex[i],NULL);
+         setIOPendingCount(i, 0);
+         pthread_mutex_lock(&io_threads_mutex[i]); /* Thread will be stopped. */
+-        if (pthread_create(&tid,NULL,IOThreadMain,(void*)(long)i) != 0) {
++        if (pthread_create(&tid,NULL,IOThreadMain,(void*)(intptr_t)i) != 0) {
+             serverLog(LL_WARNING,"Fatal: Can't initialize IO thread.");
+             exit(1);
+         }
+--- src/bio.c.orig	2023-03-06 11:44:31.667660000 +0000
++++ src/bio.c	2023-03-06 11:44:53.677076000 +0000
+@@ -123,7 +123,7 @@
+      * function accepts in order to pass the job ID the thread is
+      * responsible of. */
+     for (j = 0; j < BIO_NUM_OPS; j++) {
+-        void *arg = (void*)(unsigned long) j;
++        void *arg = (void*)(uintptr_t) j;
+         if (pthread_create(&thread,&attr,bioProcessBackgroundJobs,arg) != 0) {
+             serverLog(LL_WARNING,"Fatal: Can't initialize Background Jobs.");
+             exit(1);
+--- src/t_string.c.orig	2023-03-06 11:45:55.562969000 +0000
++++ src/t_string.c	2023-03-06 11:46:18.770708000 +0000
+@@ -610,7 +610,7 @@
+         value >= LONG_MIN && value <= LONG_MAX)
+     {
+         new = o;
+-        o->ptr = (void*)((long)value);
++        o->ptr = (void*)((intptr_t)value);
+     } else {
+         new = createStringObjectFromLongLongForValue(value);
+         if (o) {
+--- src/server.c.orig	2023-03-06 11:47:28.497534000 +0000
++++ src/server.c	2023-03-06 11:47:47.357884000 +0000
+@@ -1821,7 +1821,7 @@
+ 
+     for (j = 0; j < OBJ_SHARED_INTEGERS; j++) {
+         shared.integers[j] =
+-            makeObjectShared(createObject(OBJ_STRING,(void*)(long)j));
++            makeObjectShared(createObject(OBJ_STRING,(void*)(intptr_t)j));
+         shared.integers[j]->encoding = OBJ_ENCODING_INT;
+     }
+     for (j = 0; j < OBJ_SHARED_BULKHDR_LEN; j++) {
+ 
+ /* Try to encode a string object in order to save space */
+ robj *tryObjectEncoding(robj *o) {
+-    long value;
++    intptr_t value;
+     sds s = o->ptr;
+     size_t len;
+ 
+--- src/debug.c.orig	2022-09-21 20:42:01.000000000 +0100
++++ src/debug.c	2023-03-06 11:54:31.026530000 +0000
+@@ -1907,13 +1907,13 @@
+     if (len < 5) return;
+     for (j = 0; j < len-4; j++) {
+         if (p[j] != 0xE8) continue; /* Not an E8 CALL opcode. */
+-        unsigned long target = (unsigned long)addr+j+5;
++        uintptr_t target = (uintptr_t)addr+j+5;
+         uint32_t tmp;
+         memcpy(&tmp, p+j+1, sizeof(tmp));
+         target += tmp;
+         if (dladdr((void*)target, &info) != 0 && info.dli_sname != NULL) {
+             if (ht[target&0xff] != target) {
+-                printf("Function at 0x%lx is %s\n",target,info.dli_sname);
++                printf("Function at 0x%lx is %s\n",(size_t)target,info.dli_sname);
+                 ht[target&0xff] = target;
+             }
+             j += 4; /* Skip the 32 bit immediate. */
+--- deps/hiredis/read.c	2023-03-06 11:57:56.967988000 +0000
++++ deps/hiredis/read.c.orig	2023-03-06 11:56:44.502601000 +0000
+@@ -374,7 +374,7 @@
+             if (r->fn && r->fn->createString)
+                 obj = r->fn->createString(cur,p,len);
+             else
+-                obj = (void*)(size_t)(cur->type);
++                obj = (void*)(uintptr_t)(cur->type);
+         }
+ 
+         if (obj == NULL) {
+@@ -439,7 +439,7 @@
+                 if (r->fn && r->fn->createString)
+                     obj = r->fn->createString(cur,s+2,len);
+                 else
+-                    obj = (void*)(long)cur->type;
++                    obj = (void*)(intptr_t)cur->type;
+                 success = 1;
+             }
+         }
+@@ -536,7 +536,7 @@
+             if (r->fn && r->fn->createArray)
+                 obj = r->fn->createArray(cur,elements);
+             else
+-                obj = (void*)(long)cur->type;
++                obj = (void*)(intptr_t)cur->type;
+ 
+             if (obj == NULL) {
+                 __redisReaderSetErrorOOM(r);
+--- src/object.c	2023-03-06 12:03:18.097473000 +0000
++++ src/object.c.orig	2022-09-21 20:42:01.000000000 +0100
+@@ -164,7 +164,7 @@
+         if (value >= LONG_MIN && value <= LONG_MAX) {
+             o = createObject(OBJ_STRING, NULL);
+             o->encoding = OBJ_ENCODING_INT;
+-            o->ptr = (void*)((long)value);
++            o->ptr = (void*)((intptr_t)value);
+         } else {
+             o = createObject(OBJ_STRING,sdsfromlonglong(value));
+         }
+@@ -642,7 +642,7 @@
+             if (o->encoding == OBJ_ENCODING_RAW) {
+                 sdsfree(o->ptr);
+                 o->encoding = OBJ_ENCODING_INT;
+-                o->ptr = (void*) value;
++                o->ptr = (void*)(intptr_t) value;
+                 return o;
+             } else if (o->encoding == OBJ_ENCODING_EMBSTR) {
+                 decrRefCount(o);

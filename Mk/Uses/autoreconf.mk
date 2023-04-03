@@ -132,11 +132,11 @@ do-autoreconf:
 		if test -f configure.ac; then configure=configure.ac; \
 		else configure=configure.in; fi && \
 		if ${GREP} -q '^GTK_DOC_CHECK' $${configure}; \
-		then if ! ${LOCALBASE}/bin/gtkdocize --copy; then \
+		then if ! ${LOCALBASE64}/bin/gtkdocize --copy; then \
 		${ECHO_MSG} '===>  Mk/Uses/autoreconf.mk: Error running gtkdocize'; \
 		${FALSE}; fi; fi && \
 		if ${EGREP} -q '^(AC|IT)_PROG_INTLTOOL' $${configure}; \
-		then if ! ${LOCALBASE}/bin/intltoolize -f -c; then \
+		then if ! ${LOCALBASE64}/bin/intltoolize -f -c; then \
 		${ECHO_MSG} '===>  Mk/Uses/autoreconf.mk: Error running intltoolize'; \
 		${FALSE}; fi; fi)
 .    endif

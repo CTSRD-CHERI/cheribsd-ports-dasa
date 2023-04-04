@@ -1,0 +1,74 @@
+--- include/lf.h.orig	2022-07-06 22:36:34.000000000 +0100
++++ include/lf.h	2023-04-03 14:53:27.345114000 +0100
+@@ -86,10 +86,17 @@
+   void *purgatory;
+   uint32 purgatory_count;
+   std::atomic<uint32> link;
++#if defined(__CHERI_PURE_CAPABILITY__)
++  /* we want sizeof(LF_PINS) to be 128 to avoid false sharing */
++#if SIZEOF_INT * 2 + SIZEOF_CHARP * (LF_PINBOX_PINS + 2) != 128 
++  char pad[128 - sizeof(uint32) * 2 - sizeof(void *) * (LF_PINBOX_PINS + 2)];
++#endif
++#else
+   /* we want sizeof(LF_PINS) to be 64 to avoid false sharing */
+ #if SIZEOF_INT * 2 + SIZEOF_CHARP * (LF_PINBOX_PINS + 2) != 64
+   char pad[64 - sizeof(uint32) * 2 - sizeof(void *) * (LF_PINBOX_PINS + 2)];
+ #endif
++#endif // __CHERI_PURE_CAPABILITY__
+ };
+ 
+ /*
+--- include/prealloced_array.h.orig	2022-07-06 22:36:34.000000000 +0100
++++ include/prealloced_array.h	2023-04-03 15:13:52.229983000 +0100
+@@ -628,7 +628,11 @@
+     Element_type m_buff[Prealloc];
+   };
+ };
++#if defined(__CHERI_PURE_CAPABILITY__)
++static_assert(sizeof(Prealloced_array<void *, 4>) <= 80,
++#else
+ static_assert(sizeof(Prealloced_array<void *, 4>) <= 40,
++#endif // __CHERI_PURE_CAPABILITY__
+               "Check for no unexpected padding");
+ 
+ #endif  // PREALLOCED_ARRAY_INCLUDED
+--- mysys/lf_alloc-pin.cc.orig	2023-04-03 14:45:33.230167000 +0100
++++ mysys/lf_alloc-pin.cc	2023-04-03 14:46:35.991716000 +0100
+@@ -139,7 +139,11 @@
+ void lf_pinbox_init(LF_PINBOX *pinbox, uint free_ptr_offset,
+                     lf_pinbox_free_func *free_func, void *free_func_arg) {
+   assert(free_ptr_offset % sizeof(void *) == 0);
++#if defined(__CHERI_PURE_CAPABILITY__)
++  static_assert(sizeof(LF_PINS) == 128, "");
++#else
+   static_assert(sizeof(LF_PINS) == 64, "");
++#endif // __CHERI_PURE_CAPABILITY__
+   lf_dynarray_init(&pinbox->pinarray, sizeof(LF_PINS));
+   pinbox->pinstack_top_ver = 0;
+   pinbox->pins_in_array = 0;
+--- mysys/stacktrace.cc.orig	2022-07-06 22:36:34.000000000 +0100
++++ mysys/stacktrace.cc	2023-04-03 15:52:44.790750000 +0100
+@@ -258,14 +258,23 @@
+ 
+   unw_getcontext(&uc);
+   unw_init_local(&cursor, &uc);
++#if defined(__CHERI_PURE_CAPABILITY__)
++  size_t offp;
++#else
+   unw_word_t offp;
++#endif // __CHERI_PURE_CAPABILITY__
+   while (unw_step(&cursor) > 0) {
+     unw_get_reg(&cursor, UNW_REG_IP, &ip);
+     unw_get_proc_name(&cursor, procname_buffer, sizeof(procname_buffer), &offp);
+     int status;
+     char *demangled = my_demangle(procname_buffer, &status);
++#if defined(__CHERI_PURE_CAPABILITY__)
++    my_safe_printf_stderr("[0x%#p] %s+0x%#p\n", (void *) ip,
++                          demangled ? demangled : procname_buffer, (void *) offp);
++#else
+     my_safe_printf_stderr("[0x%lx] %s+0x%lx\n", ip,
+                           demangled ? demangled : procname_buffer, offp);
++#endif // __CHERI_PURE_CAPABILITY__
+     if (demangled) free(demangled);
+   }
+ #endif

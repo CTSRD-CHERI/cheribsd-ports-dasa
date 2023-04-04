@@ -23,6 +23,6 @@ INSTALL_TARGET=	install-strip
 OPTIONS_DEFINE=	DOCS
 
 pre-configure:
-	@${CP} ${LOCALBASE}/share/gettext/config.rpath ${WRKSRC}
+	@${CP} ${LOCALBASE64}/share/gettext/config.rpath ${WRKSRC}
 
 .include <bsd.port.mk>

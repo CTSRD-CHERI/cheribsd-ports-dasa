@@ -65,3 +65,7 @@ SCRAM_CONFIGURE_ENABLE=	scram
 DOCS=	AUTHORS COPYING ChangeLog INSTALL.TXT README
 
 .include "${.CURDIR}/../../security/cyrus-sasl2/Makefile.common"
+
+# Installation Procedure: https://www.sendmail.org/~ca/email/cyrus2/install.html
+post-install:
+	${LN} -s /usr/locallib/sasl2 /usr/lib/sasl2

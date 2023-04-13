@@ -72,3 +72,18 @@
      if (demangled) free(demangled);
    }
  #endif
+diff --git include/my_pointer_arithmetic.h include/my_pointer_arithmetic.h
+index 1338042566a..4d1d5b92ec6 100644
+--- include/my_pointer_arithmetic.h
++++ include/my_pointer_arithmetic.h
+@@ -32,7 +32,11 @@
+ */
+
+ #define MY_ALIGN(A, L) (((A) + (L)-1) & ~((L)-1))
++#if defined(__CHERI_PURE_CAPABILITY__)
++#define ALIGN_SIZE(A) MY_ALIGN((A), alignof(max_align_t))
++#else
+ #define ALIGN_SIZE(A) MY_ALIGN((A), sizeof(double))
++#endif
+
+ #ifdef __cplusplus

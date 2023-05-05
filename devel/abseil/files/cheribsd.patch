@@ -874,7 +874,7 @@ index b9dda909..c6f9bc20 100644
    using VoidPtr = str_format_internal::VoidPtr;
  
 diff --git absl/strings/numbers.h absl/strings/numbers.h
-index 86c84ed3..28e9020f 100644
+index 86c84ed3..3b723c2b 100644
 --- absl/strings/numbers.h
 +++ absl/strings/numbers.h
 @@ -150,7 +150,12 @@ bool safe_strtou64_base(absl::string_view text, uint64_t* value, int base);
@@ -906,6 +906,31 @@ index 86c84ed3..28e9020f 100644
    // TODO(jorg): This signed-ness check is used because it works correctly
    // with enums, and it also serves to check that int_type is not a pointer.
    // If one day something like std::is_signed<enum E> works, switch to it.
+@@ -201,8 +213,15 @@ char* FastIntToBuffer(int_type i, char* buffer) {
+ template <typename int_type>
+ ABSL_MUST_USE_RESULT bool safe_strtoi_base(absl::string_view s, int_type* out,
+                                            int base) {
++#if defined(__CHERI_PURE_CAPABILITY__)
++  static_assert(sizeof(*out) == 4 || sizeof(*out) == 8 ||
++                std::is_same<int_type, intptr_t>::value ||
++                std::is_same<int_type, uintptr_t>::value,
++                "SimpleAtoi works only with 32-bit or 64-bit integers.");
++#else
+   static_assert(sizeof(*out) == 4 || sizeof(*out) == 8,
+                 "SimpleAtoi works only with 32-bit or 64-bit integers.");
++#endif
+   static_assert(!std::is_floating_point<int_type>::value,
+                 "Use SimpleAtof or SimpleAtod instead.");
+   bool parsed;
+@@ -211,7 +230,7 @@ ABSL_MUST_USE_RESULT bool safe_strtoi_base(absl::string_view s, int_type* out,
+   // If one day something like std::is_signed<enum E> works, switch to it.
+   // These conditions are constexpr bools to suppress MSVC warning C4127.
+   constexpr bool kIsSigned = static_cast<int_type>(1) - 2 < 0;
+-  constexpr bool kUse64Bit = sizeof(*out) == 64 / 8;
++  constexpr bool kUse64Bit = sizeof(*out) > 32 / 8;
+   if (kIsSigned) {
+     if (kUse64Bit) {
+       int64_t val;
 diff --git absl/strings/str_cat.h absl/strings/str_cat.h
 index a94bc5df..6c412c95 100644
 --- absl/strings/str_cat.h

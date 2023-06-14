@@ -2868,6 +2868,9 @@ IGNORE=		is marked as broken on ${ARCH}: ${BROKEN_${ARCH}}
 .          if defined(BROKEN_${_abi})
 .            if !defined(TRYBROKEN)
 IGNORE=		is marked as broken for ${_abi}: ${BROKEN_${_abi}}
+.              if ${_abi} == "purecap" && ${USE_PKG64} == 1
+IGNORE:=	${IGNORE}. Consider installing this port with pkg64
+.              endif
 .            endif
 .          endif
 .        endfor
@@ -3257,6 +3260,13 @@ run-cheri-gnulib-fixup:
 		if grep -q "typedef long int gl_intptr_t" $${f} ; then \
 			echo "Replacing $${f}" ; \
 			echo "#include_next <stdint.h>" > $${f} ; \
+		fi \
+	done
+# Patch rawmemchr not to use uintptr_t to store arbitrary bytes.
+	-@for f in `${FIND} ${WRKDIR} -type f -name rawmemchr.c` ; do \
+		if grep -q "typedef uintptr_t longword" $${f} ; then \
+			echo "Replacing $${f}" ; \
+			${PATCH} -s $${f} ${PORTSDIR}/devel/gnulib/files/extrapatch-cheribsd-rawmemchr.patch ; \
 		fi \
 	done
 .    endif
@@ -4089,7 +4099,7 @@ ${deptype:tl}-depends:
 # Dependency lists: both build and runtime, recursive.  Print out directory names.
 
 _UNIFIED_DEPENDS=${PKG_DEPENDS} ${EXTRACT_DEPENDS} ${PATCH_DEPENDS} ${FETCH_DEPENDS} ${BUILD_DEPENDS} ${LIB_DEPENDS} ${RUN_DEPENDS} ${TEST_DEPENDS}
-_DEPEND_SPECIALS=	${_UNIFIED_DEPENDS:M*\:*\:*:C,^[^:]*:([^:]*):.*$,\1,}
+_DEPEND_SPECIALS=	${_UNIFIED_DEPENDS:N*\:pkg64:M*\:*\:*:C,^[^:]*:([^:]*):.*$,\1,}
 
 .    for d in ${_UNIFIED_DEPENDS:M*\:/*}
 _PORTSDIR_STR=	$${PORTSDIR}/

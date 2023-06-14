@@ -89,17 +89,25 @@ PERL_PORT?=	perl5.34
 PERL_PORT?=	perl5.32
 .  endif
 
+.  if ${USE_PERL5:Mpkg64}
+PERL_LOCALBASE=	${LOCALBASE64}
+.  else
+PERL_LOCALBASE=	${LOCALBASE}
+.  endif
+
 SITE_PERL_REL?=	lib/perl5/site_perl
-SITE_PERL?=	${LOCALBASE}/${SITE_PERL_REL}
+SITE_PERL?=	${PERL_LOCALBASE}/${SITE_PERL_REL}
 SITE_ARCH_REL?=	${SITE_PERL_REL}/${PERL_ARCH}/${PERL_VER}
-SITE_ARCH?=	${LOCALBASE}/${SITE_ARCH_REL}
+SITE_ARCH?=	${PERL_LOCALBASE}/${SITE_ARCH_REL}
 SITE_MAN3_REL?=	${SITE_PERL_REL}/man/man3
 SITE_MAN3?=	${PREFIX}/${SITE_MAN3_REL}
 SITE_MAN1_REL?=	${SITE_PERL_REL}/man/man1
 SITE_MAN1?=	${PREFIX}/${SITE_MAN1_REL}
 
-PERL5?=		${LOCALBASE}/bin/perl${PERL_VERSION}
-PERL?=		${LOCALBASE}/bin/perl
+PERL5?=		${PERL_LOCALBASE}/bin/perl${PERL_VERSION}
+PERL?=		${PERL_LOCALBASE}/bin/perl
+# Overwrite perl_CMD for Mk/Uses/shebangfix.mk.
+perl_CMD?=	${PERL}
 CONFIGURE_ENV+=	ac_cv_path_PERL=${PERL} ac_cv_path_PERL_PATH=${PERL} \
 		PERL_USE_UNSAFE_INC=1
 
@@ -154,6 +162,7 @@ IGNORE=	improper use of USE_PERL5
 
 _USE_PERL5_VALID=	build configure extract modbuild modbuildtiny patch run \
 			test
+_USE_PERL5_VALID+=	pkg64
 _USE_PERL5_UNKNOWN=
 .  for component in ${_USE_PERL5}
 .    if empty(_USE_PERL5_VALID:M${component})
@@ -227,24 +236,30 @@ CONFIGURE_ENV+=	PERL_MM_USE_DEFAULT="YES"
 .    endif # defined(BATCH) && !defined(IS_INTERACTIVE)
 .  endif # configure
 
+.  if ${_USE_PERL5:Mpkg64}
+PERL5_PKG64=		:pkg64
+.  else
+PERL5_PKG64=
+.  endif
+
 .  if ${_USE_PERL5:Mextract}
-EXTRACT_DEPENDS+=	${PERL5_DEPEND}:lang/${PERL_PORT}
+EXTRACT_DEPENDS+=	${PERL5}:lang/${PERL_PORT}${PERL5_PKG64}
 .  endif
 
 .  if ${_USE_PERL5:Mpatch}
-PATCH_DEPENDS+=		${PERL5_DEPEND}:lang/${PERL_PORT}
+PATCH_DEPENDS+=		${PERL5}:lang/${PERL_PORT}${PERL5_PKG64}
 .  endif
 
 .  if ${_USE_PERL5:Mbuild}
-BUILD_DEPENDS+=		${PERL5_DEPEND}:lang/${PERL_PORT}
+BUILD_DEPENDS+=		${PERL5}:lang/${PERL_PORT}${PERL5_PKG64}
 .  endif
 
 .  if ${_USE_PERL5:Mrun}
-RUN_DEPENDS+=		${PERL5_DEPEND}:lang/${PERL_PORT}
+RUN_DEPENDS+=		${PERL5}:lang/${PERL_PORT}
 .  endif
 
 .  if ${_USE_PERL5:Mtest}
-TEST_DEPENDS+=		${PERL5_DEPEND}:lang/${PERL_PORT}
+TEST_DEPENDS+=		${PERL5}:lang/${PERL_PORT}
 .  endif
 
 .  if ${_USE_PERL5:Mconfigure}

@@ -1,0 +1,1967 @@
+diff --git config/config.sub config/config.sub
+index dba16e84c7..59a77f2527 100644
+--- config/config.sub
++++ config/config.sub
+@@ -1126,7 +1126,7 @@ case $cpu-$vendor in
+ 	xscale-* | xscalee[bl]-*)
+ 		cpu=`echo "$cpu" | sed 's/^xscale/arm/'`
+ 		;;
+-	arm64-* | aarch64le-*)
++	arm64-* | aarch64c-* | aarch64le-*)
+ 		cpu=aarch64
+ 		;;
+ 
+diff --git configure configure
+index 453f1fb438..2bd73112f0 100755
+--- configure
++++ configure
+@@ -18062,7 +18062,31 @@ cat >>confdefs.h <<_ACEOF
+ #define ALIGNOF_DOUBLE $ac_cv_alignof_double
+ _ACEOF
+ 
++# The cast to long int works around a bug in the HP C Compiler,
++# see AC_CHECK_SIZEOF for more information.
++{ $as_echo "$as_me:${as_lineno-$LINENO}: checking alignment of void*" >&5
++$as_echo_n "checking alignment of void*... " >&6; }
++if ${ac_cv_alignof_voidp+:} false; then :
++  $as_echo_n "(cached) " >&6
++else
++  if ac_fn_c_compute_int "$LINENO" "(long int) offsetof (ac__type_alignof_, y)" "ac_cv_alignof_voidp"        "$ac_includes_default
++#ifndef offsetof
++# define offsetof(type, member) ((char *) &((type *) 0)->member - (char *) 0)
++#endif
++typedef struct { char x; void* y; } ac__type_alignof_;"; then :
+ 
++else
++  if test "$ac_cv_type_voidp" = yes; then
++     { { $as_echo "$as_me:${as_lineno-$LINENO}: error: in \`$ac_pwd':" >&5
++$as_echo "$as_me: error: in \`$ac_pwd':" >&2;}
++as_fn_error 77 "cannot compute alignment of void*
++See \`config.log' for more details" "$LINENO" 5; }
++   else
++     ac_cv_alignof_voidp=0
++   fi
++fi
++
++fi
+ 
+ # Compute maximum alignment of any basic type.
+ # We assume long's alignment is at least as strong as char, short, or int;
+@@ -18078,6 +18102,9 @@ fi
+ if test x"$HAVE_LONG_LONG_INT_64" = xyes && test $MAX_ALIGNOF -lt $ac_cv_alignof_long_long_int ; then
+   MAX_ALIGNOF="$ac_cv_alignof_long_long_int"
+ fi
++if test $MAX_ALIGNOF -lt $ac_cv_alignof_voidp; then
++  MAX_ALIGNOF=$ac_cv_alignof_voidp
++fi
+ 
+ cat >>confdefs.h <<_ACEOF
+ #define MAXIMUM_ALIGNOF $MAX_ALIGNOF
+diff --git configure.ac configure.ac
+index 58a862f269..ed18da5062 100644
+--- configure.ac
++++ configure.ac
+@@ -2152,6 +2152,11 @@ fi
+ if test x"$HAVE_LONG_LONG_INT_64" = xyes && test $MAX_ALIGNOF -lt $ac_cv_alignof_long_long_int ; then
+   MAX_ALIGNOF="$ac_cv_alignof_long_long_int"
+ fi
++
++if test $MAX_ALIGNOF -lt $ac_cv_alignof_voidp ; then
++  MAX_ALIGNOF=$ac_cv_alignof_voidp
++fi
++
+ AC_DEFINE_UNQUOTED(MAXIMUM_ALIGNOF, $MAX_ALIGNOF, [Define as the maximum alignment requirement of any C data type.])
+ 
+ 
+diff --git src/backend/access/gist/gistproc.c src/backend/access/gist/gistproc.c
+index 22f2c18537..7320348639 100644
+--- src/backend/access/gist/gistproc.c
++++ src/backend/access/gist/gistproc.c
+@@ -1707,7 +1707,7 @@ gist_bbox_zorder_cmp(Datum a, Datum b, SortSupport ssup)
+  * Abbreviated version of Z-order comparison
+  *
+  * The abbreviated format is a Z-order value computed from the two 32-bit
+- * floats. If SIZEOF_DATUM == 8, the 64-bit Z-order value fits fully in the
++ * floats. If SIZEOF_DATUM >= 8, the 64-bit Z-order value fits fully in the
+  * abbreviated Datum, otherwise use its most significant bits.
+  */
+ static Datum
+@@ -1718,7 +1718,7 @@ gist_bbox_zorder_abbrev_convert(Datum original, SortSupport ssup)
+ 
+ 	z = point_zorder_internal(p->x, p->y);
+ 
+-#if SIZEOF_DATUM == 8
++#if SIZEOF_DATUM >= 8
+ 	return (Datum) z;
+ #else
+ 	return (Datum) (z >> 32);
+diff --git src/backend/bootstrap/bootstrap.c src/backend/bootstrap/bootstrap.c
+index 48ff9483af..9569abbca0 100644
+--- src/backend/bootstrap/bootstrap.c
++++ src/backend/bootstrap/bootstrap.c
+@@ -126,9 +126,9 @@ static const struct typinfo TypInfo[] = {
+ 	F_CIDIN, F_CIDOUT},
+ 	{"pg_node_tree", PG_NODE_TREEOID, 0, -1, false, TYPALIGN_INT, TYPSTORAGE_EXTENDED, DEFAULT_COLLATION_OID,
+ 	F_PG_NODE_TREE_IN, F_PG_NODE_TREE_OUT},
+-	{"int2vector", INT2VECTOROID, INT2OID, -1, false, TYPALIGN_INT, TYPSTORAGE_PLAIN, InvalidOid,
++	{"int2vector", INT2VECTOROID, INT2OID, -1, false, TYPALIGN_POINTER, TYPSTORAGE_PLAIN, InvalidOid,
+ 	F_INT2VECTORIN, F_INT2VECTOROUT},
+-	{"oidvector", OIDVECTOROID, OIDOID, -1, false, TYPALIGN_INT, TYPSTORAGE_PLAIN, InvalidOid,
++	{"oidvector", OIDVECTOROID, OIDOID, -1, false, TYPALIGN_POINTER, TYPSTORAGE_PLAIN, InvalidOid,
+ 	F_OIDVECTORIN, F_OIDVECTOROUT},
+ 	{"_int4", INT4ARRAYOID, INT4OID, -1, false, TYPALIGN_INT, TYPSTORAGE_EXTENDED, InvalidOid,
+ 	F_ARRAY_IN, F_ARRAY_OUT},
+diff --git src/backend/catalog/Catalog.pm src/backend/catalog/Catalog.pm
+index e91a8e10a8..bdc7a3d28a 100644
+--- src/backend/catalog/Catalog.pm
++++ src/backend/catalog/Catalog.pm
+@@ -1,4 +1,4 @@
+-#----------------------------------------------------------------------
++#T----------------------------------------------------------------------
+ #
+ # Catalog.pm
+ #    Perl module that extracts info from catalog files into Perl
+@@ -436,7 +436,7 @@ sub GenerateArrayTypes
+ 
+ 		# Arrays require INT alignment, unless the element type requires
+ 		# DOUBLE alignment.
+-		$array_type{typalign} = $elem_type->{typalign} eq 'd' ? 'd' : 'i';
++		$array_type{typalign} = ($elem_type->{typalign} eq 'p') ? 'p' : ($elem_type->{typalign} eq 'd') ? 'd' : 'i';
+ 
+ 		# Fill in the rest of the array entry's fields.
+ 		foreach my $column (@$pgtype_schema)
+diff --git src/backend/catalog/heap.c src/backend/catalog/heap.c
+index 1803194db9..7607d6d683 100644
+--- src/backend/catalog/heap.c
++++ src/backend/catalog/heap.c
+@@ -1042,7 +1042,7 @@ AddNewRelationType(const char *typeName,
+ 				   NULL,		/* default value - none */
+ 				   NULL,		/* default binary representation */
+ 				   false,		/* passed by reference */
+-				   TYPALIGN_DOUBLE, /* alignment - must be the largest! */
++				   TYPALIGN_POINTER, /* alignment - must be the largest! */
+ 				   TYPSTORAGE_EXTENDED, /* fully TOASTable */
+ 				   -1,			/* typmod */
+ 				   0,			/* array dimensions for typBaseType */
+@@ -1358,7 +1358,7 @@ heap_create_with_catalog(const char *relname,
+ 				   NULL,		/* default value - none */
+ 				   NULL,		/* default binary representation */
+ 				   false,		/* passed by reference */
+-				   TYPALIGN_DOUBLE, /* alignment - must be the largest! */
++				   TYPALIGN_POINTER, /* alignment - must be the largest! */
+ 				   TYPSTORAGE_EXTENDED, /* fully TOASTable */
+ 				   -1,			/* typmod */
+ 				   0,			/* array dimensions for typBaseType */
+diff --git src/backend/catalog/pg_type.c src/backend/catalog/pg_type.c
+index ae12cb7d02..f40db57ae8 100644
+--- src/backend/catalog/pg_type.c
++++ src/backend/catalog/pg_type.c
+@@ -288,7 +288,23 @@ TypeCreate(Oid newTypeOid,
+ 						 errmsg("alignment \"%c\" is invalid for passed-by-value type of size %d",
+ 								alignment, internalSize)));
+ 		}
+-#if SIZEOF_DATUM == 8
++#if SIZEOF_DATUM >= 8
++#if defined(__CHERI_PURE_CAPABILITY__)
++		else if (sizeof(void *) == sizeof(Datum) && internalSize == sizeof(ptraddr_t)) {
++			if (alignment != TYPALIGN_DOUBLE)
++				ereport(ERROR,
++						(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
++						 errmsg("alignment \"%c\" is invalid for passed-by-value type of size %d",
++								alignment, internalSize)));
++		}
++		else if (sizeof(void *) == sizeof(Datum) && internalSize == sizeof(void *)) {
++			if (alignment != TYPALIGN_POINTER)
++				ereport(ERROR,
++						(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
++						 errmsg("alignment \"%c\" is invalid for passed-by-value type of size %d",
++								alignment, internalSize)));
++		}
++#endif
+ 		else if (internalSize == (int16) sizeof(Datum))
+ 		{
+ 			if (alignment != TYPALIGN_DOUBLE)
+@@ -308,7 +324,7 @@ TypeCreate(Oid newTypeOid,
+ 	{
+ 		/* varlena types must have int align or better */
+ 		if (internalSize == -1 &&
+-			!(alignment == TYPALIGN_INT || alignment == TYPALIGN_DOUBLE))
++			!(alignment == TYPALIGN_INT || alignment == TYPALIGN_DOUBLE || alignment == TYPALIGN_POINTER))
+ 			ereport(ERROR,
+ 					(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
+ 					 errmsg("alignment \"%c\" is invalid for variable-length type",
+diff --git src/backend/commands/analyze.c src/backend/commands/analyze.c
+index 74888702fb..63fc1093bd 100644
+--- src/backend/commands/analyze.c
++++ src/backend/commands/analyze.c
+@@ -68,6 +68,30 @@
+ #include "utils/syscache.h"
+ #include "utils/timestamp.h"
+ 
++#if defined(__CHERI_PURE_CAPABILITY__)
++#include "statistics/extended_stats_internal.h"
++
++#define ST_SORT qsort_interruptible_scalaritem
++#define ST_ELEMENT_TYPE ScalarItem
++#define ST_COMPARATOR_TYPE_NAME qsort_arg_comparator
++#define ST_COMPARE_RUNTIME_POINTER
++#define ST_COMPARE_ARG_TYPE void 
++#define ST_SCOPE static
++#define ST_DEFINE
++#define ST_CHECK_FOR_INTERRUPTS
++#include "lib/sort_template.h"
++
++#define ST_SORT qsort_interruptible_heaptuple
++#define ST_ELEMENT_TYPE_VOID
++#define ST_COMPARATOR_TYPE_NAME qsort_arg_comparator
++#define ST_COMPARE_RUNTIME_POINTER
++#define ST_COMPARE_ARG_TYPE void 
++#define ST_SCOPE static
++#define ST_DEFINE
++#define ST_CHECK_FOR_INTERRUPTS
++#define ST_CAPABILITY
++#include "lib/sort_template.h"
++#endif
+ 
+ /* Per-index data for ANALYZE */
+ typedef struct AnlIndexData
+@@ -1306,7 +1330,11 @@ acquire_sample_rows(Relation onerel, int elevel,
+ 	 * tuples are already sorted.
+ 	 */
+ 	if (numrows == targrows)
++#if defined(__CHERI_PURE_CAPABILITY__)
++		qsort_interruptible_heaptuple((void *) rows, numrows, sizeof(HeapTuple),
++#else
+ 		qsort_interruptible((void *) rows, numrows, sizeof(HeapTuple),
++#endif
+ 							compare_rows, NULL);
+ 
+ 	/*
+@@ -2477,8 +2505,13 @@ compute_scalar_stats(VacAttrStatsP stats,
+ 		/* Sort the collected values */
+ 		cxt.ssup = &ssup;
+ 		cxt.tupnoLink = tupnoLink;
++#if defined(__CHERI_PURE_CAPABILITY__)
++		qsort_interruptible_scalaritem((void *) values, values_cnt,
++							compare_scalars, (void *) &cxt);
++#else
+ 		qsort_interruptible((void *) values, values_cnt, sizeof(ScalarItem),
+ 							compare_scalars, (void *) &cxt);
++#endif
+ 
+ 		/*
+ 		 * Now scan the values in order, find the most common ones, and also
+diff --git src/backend/commands/typecmds.c src/backend/commands/typecmds.c
+index 9b92b04242..860c58e1d0 100644
+--- src/backend/commands/typecmds.c
++++ src/backend/commands/typecmds.c
+@@ -606,7 +606,7 @@ DefineType(ParseState *pstate, List *names, List *parameters)
+ 	array_type = makeArrayTypeName(typeName, typeNamespace);
+ 
+ 	/* alignment must be TYPALIGN_INT or TYPALIGN_DOUBLE for arrays */
+-	alignment = (alignment == TYPALIGN_DOUBLE) ? TYPALIGN_DOUBLE : TYPALIGN_INT;
++	alignment = (alignment == TYPALIGN_POINTER) ? TYPALIGN_POINTER : (alignment == TYPALIGN_DOUBLE) ? TYPALIGN_DOUBLE : TYPALIGN_INT;
+ 
+ 	TypeCreate(array_oid,		/* force assignment of this type OID */
+ 			   array_type,		/* type name */
+diff --git src/backend/statistics/extended_stats.c src/backend/statistics/extended_stats.c
+index 91955b39c9..884896debf 100644
+--- src/backend/statistics/extended_stats.c
++++ src/backend/statistics/extended_stats.c
+@@ -944,8 +944,8 @@ int
+ compare_scalars_simple(const void *a, const void *b, void *arg)
+ {
+ 	return compare_datums_simple(*(Datum *) a,
+-								 *(Datum *) b,
+-								 (SortSupport) arg);
++				     *(Datum *) b,
++				     (SortSupport) arg);
+ }
+ 
+ int
+@@ -1129,7 +1129,7 @@ build_sorted_items(StatsBuildData *data, int *nitems,
+ 	}
+ 
+ 	/* do the sort, using the multi-sort */
+-	qsort_interruptible((void *) items, nrows, sizeof(SortItem),
++	qsort_interruptible_sortitem((void *) items, nrows,
+ 						multi_sort_compare, mss);
+ 
+ 	return items;
+diff --git src/backend/statistics/mcv.c src/backend/statistics/mcv.c
+index 6d9a098479..4c1164e64c 100644
+--- src/backend/statistics/mcv.c
++++ src/backend/statistics/mcv.c
+@@ -36,6 +36,21 @@
+ #include "utils/syscache.h"
+ #include "utils/typcache.h"
+ 
++#if defined(__CHERI_PURE_CAPABILITY__)
++#include "postgres.h"
++#include "miscadmin.h"
++
++#define ST_SORT qsort_interruptible_datum
++#define ST_ELEMENT_TYPE Datum 
++#define ST_COMPARATOR_TYPE_NAME qsort_arg_comparator
++#define ST_COMPARE_RUNTIME_POINTER
++#define ST_COMPARE_ARG_TYPE struct SortSupportData
++#define ST_SCOPE static
++#define ST_DEFINE
++#define ST_CHECK_FOR_INTERRUPTS
++#include "lib/sort_template.h"
++#endif
++
+ /*
+  * Computes size of a serialized MCV item, depending on the number of
+  * dimensions (columns) the statistic is defined on. The datum values are
+@@ -457,8 +472,13 @@ build_distinct_groups(int numrows, SortItem *items, MultiSortSupport mss,
+ 	Assert(j + 1 == ngroups);
+ 
+ 	/* Sort the distinct groups by frequency (in descending order). */
++#if defined(__CHERI_PURE_CAPABILITY__)
++	qsort_interruptible_sortitem(groups, ngroups,
++						compare_sort_item_count, NULL);
++#else
+ 	qsort_interruptible((void *) groups, ngroups, sizeof(SortItem),
+ 						compare_sort_item_count, NULL);
++#endif
+ 
+ 	*ndistinct = ngroups;
+ 	return groups;
+@@ -528,8 +548,13 @@ build_column_frequencies(SortItem *groups, int ngroups,
+ 		}
+ 
+ 		/* sort the values, deduplicate */
++#if defined(__CHERI_PURE_CAPABILITY__)
++		qsort_interruptible_sortitem(result[dim], ngroups,
++							sort_item_compare, ssup);
++#else
+ 		qsort_interruptible((void *) result[dim], ngroups, sizeof(SortItem),
+ 							sort_item_compare, ssup);
++#endif
+ 
+ 		/*
+ 		 * Identify distinct values, compute frequency (there might be
+@@ -696,8 +721,13 @@ statext_mcv_serialize(MCVList *mcvlist, VacAttrStats **stats)
+ 
+ 		PrepareSortSupportFromOrderingOp(typentry->lt_opr, &ssup[dim]);
+ 
++#if defined(__CHERI_PURE_CAPABILITY__)
++		qsort_interruptible_datum(values[dim], counts[dim],
++							compare_scalars_simple, &ssup[dim]);
++#else
+ 		qsort_interruptible(values[dim], counts[dim], sizeof(Datum),
+ 							compare_scalars_simple, &ssup[dim]);
++#endif
+ 
+ 		/*
+ 		 * Walk through the array and eliminate duplicate values, but keep the
+diff --git src/backend/statistics/mvdistinct.c src/backend/statistics/mvdistinct.c
+index 9b216af517..9a74f24208 100644
+--- src/backend/statistics/mvdistinct.c
++++ src/backend/statistics/mvdistinct.c
+@@ -489,7 +489,7 @@ ndistinct_for_combination(double totalrows, StatsBuildData *data,
+ 	}
+ 
+ 	/* We can sort the array now ... */
+-	qsort_interruptible((void *) items, numrows, sizeof(SortItem),
++	qsort_interruptible_sortitem((void *) items, numrows,
+ 						multi_sort_compare, mss);
+ 
+ 	/* ... and count the number of distinct combinations */
+diff --git src/backend/tsearch/ts_typanalyze.c src/backend/tsearch/ts_typanalyze.c
+index e771a7cd62..7872c50c4b 100644
+--- src/backend/tsearch/ts_typanalyze.c
++++ src/backend/tsearch/ts_typanalyze.c
+@@ -36,6 +36,22 @@ typedef struct
+ 	int			delta;			/* And this is 'delta'. */
+ } TrackItem;
+ 
++#if defined(__CHERI_PURE_CAPABILITY__)
++#include "postgres.h"
++#include "miscadmin.h"
++
++#define ST_SORT qsort_interruptible_ts_trackitem
++#define ST_ELEMENT_TYPE_VOID
++#define ST_COMPARATOR_TYPE_NAME qsort_arg_comparator
++#define ST_COMPARE_RUNTIME_POINTER
++#define ST_COMPARE_ARG_TYPE void 
++#define ST_SCOPE static
++#define ST_DEFINE
++#define ST_CHECK_FOR_INTERRUPTS
++#define ST_CAPABILITY
++#include "lib/sort_template.h"
++#endif
++
+ static void compute_tsvector_stats(VacAttrStats *stats,
+ 								   AnalyzeAttrFetchFunc fetchfunc,
+ 								   int samplerows,
+@@ -44,10 +60,8 @@ static void prune_lexemes_hashtable(HTAB *lexemes_tab, int b_current);
+ static uint32 lexeme_hash(const void *key, Size keysize);
+ static int	lexeme_match(const void *key1, const void *key2, Size keysize);
+ static int	lexeme_compare(const void *key1, const void *key2);
+-static int	trackitem_compare_frequencies_desc(const void *e1, const void *e2,
+-											   void *arg);
+-static int	trackitem_compare_lexemes(const void *e1, const void *e2,
+-									  void *arg);
++static int 	trackitem_compare_frequencies_desc(const void *e1, const void *e2, void *arg);
++static int	trackitem_compare_lexemes(const void *e1, const void *e2, void *arg);
+ 
+ 
+ /*
+@@ -349,8 +363,13 @@ compute_tsvector_stats(VacAttrStats *stats,
+ 		 */
+ 		if (num_mcelem < track_len)
+ 		{
++#if defined(__CHERI_PURE_CAPABILITY__)
++			qsort_interruptible_ts_trackitem(sort_table, track_len, sizeof(TrackItem *),
++								trackitem_compare_frequencies_desc, NULL);
++#else
+ 			qsort_interruptible(sort_table, track_len, sizeof(TrackItem *),
+ 								trackitem_compare_frequencies_desc, NULL);
++#endif
+ 			/* reset minfreq to the smallest frequency we're keeping */
+ 			minfreq = sort_table[num_mcelem - 1]->frequency;
+ 		}
+@@ -378,8 +397,13 @@ compute_tsvector_stats(VacAttrStats *stats,
+ 			 * presorted we can employ binary search for that.  See
+ 			 * ts_selfuncs.c for a real usage scenario.
+ 			 */
++#if defined(__CHERI_PURE_CAPABILITY__)
++			qsort_interruptible_ts_trackitem(sort_table, num_mcelem, sizeof(TrackItem *),
++								trackitem_compare_lexemes, NULL);
++#else
+ 			qsort_interruptible(sort_table, num_mcelem, sizeof(TrackItem *),
+ 								trackitem_compare_lexemes, NULL);
++#endif
+ 
+ 			/* Must copy the target values into anl_context */
+ 			old_context = MemoryContextSwitchTo(stats->anl_context);
+diff --git src/backend/utils/adt/array_typanalyze.c src/backend/utils/adt/array_typanalyze.c
+index 1964cedd93..d0aa8bcbd6 100644
+--- src/backend/utils/adt/array_typanalyze.c
++++ src/backend/utils/adt/array_typanalyze.c
+@@ -22,7 +22,6 @@
+ #include "utils/lsyscache.h"
+ #include "utils/typcache.h"
+ 
+-
+ /*
+  * To avoid consuming too much memory, IO and CPU load during analysis, and/or
+  * too much space in the resulting pg_statistic rows, we ignore arrays that
+@@ -73,6 +72,24 @@ typedef struct
+ 	int			last_container; /* For de-duplication of array elements. */
+ } TrackItem;
+ 
++#if defined(__CHERI_PURE_CAPABILITY__)
++#include "postgres.h"
++#include "miscadmin.h"
++#endif
++
++#if defined(__CHERI_PURE_CAPABILITY__)
++#define ST_SORT qsort_interruptible_trackitem
++#define ST_ELEMENT_TYPE_VOID
++#define ST_COMPARATOR_TYPE_NAME qsort_arg_comparator
++#define ST_COMPARE_RUNTIME_POINTER
++#define ST_COMPARE_ARG_TYPE void 
++#define ST_SCOPE static
++#define ST_DEFINE
++#define ST_CHECK_FOR_INTERRUPTS
++#define ST_CAPABILITY
++#include "lib/sort_template.h"
++#endif
++
+ /* A hash table entry for distinct-elements counts */
+ typedef struct
+ {
+@@ -80,15 +97,28 @@ typedef struct
+ 	int			frequency;		/* Number of arrays seen with this count */
+ } DECountItem;
+ 
++#if defined(__CHERI_PURE_CAPABILITY__)
++#define ST_SORT qsort_interruptible_deccountitem
++#define ST_ELEMENT_TYPE_VOID
++#define ST_COMPARATOR_TYPE_NAME qsort_arg_comparator
++#define ST_COMPARE_RUNTIME_POINTER
++#define ST_COMPARE_ARG_TYPE void 
++#define ST_SCOPE static
++#define ST_DEFINE
++#define ST_CHECK_FOR_INTERRUPTS
++#define ST_CAPABILITY
++#include "lib/sort_template.h"
++#endif
++
+ static void compute_array_stats(VacAttrStats *stats,
+ 								AnalyzeAttrFetchFunc fetchfunc, int samplerows, double totalrows);
+ static void prune_element_hashtable(HTAB *elements_tab, int b_current);
+ static uint32 element_hash(const void *key, Size keysize);
+ static int	element_match(const void *key1, const void *key2, Size keysize);
+ static int	element_compare(const void *key1, const void *key2);
+-static int	trackitem_compare_frequencies_desc(const void *e1, const void *e2, void *arg);
+-static int	trackitem_compare_element(const void *e1, const void *e2, void *arg);
+-static int	countitem_compare_count(const void *e1, const void *e2, void *arg);
++static int	trackitem_compare_frequencies_desc(void *e1, void *e2, void *arg);
++static int	trackitem_compare_element(void *e1, void *e2, void *arg);
++static int	countitem_compare_count(void *e1, void *e2i, void *arg);
+ 
+ 
+ /*
+@@ -502,8 +532,13 @@ compute_array_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
+ 		 */
+ 		if (num_mcelem < track_len)
+ 		{
++#if defined(__CHERI_PURE_CAPABILITY__)
++			qsort_interruptible_trackitem(sort_table, track_len, sizeof(TrackItem *),
++								trackitem_compare_frequencies_desc, NULL);
++#else
+ 			qsort_interruptible(sort_table, track_len, sizeof(TrackItem *),
+ 								trackitem_compare_frequencies_desc, NULL);
++#endif
+ 			/* reset minfreq to the smallest frequency we're keeping */
+ 			minfreq = sort_table[num_mcelem - 1]->frequency;
+ 		}
+@@ -522,8 +557,13 @@ compute_array_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
+ 			 * the element type's default comparison function.  This permits
+ 			 * fast binary searches in selectivity estimation functions.
+ 			 */
++#if defined(__CHERI_PURE_CAPABILITY__)
++			qsort_interruptible_trackitem(sort_table, num_mcelem, sizeof(TrackItem *),
++								trackitem_compare_element, NULL);
++#else
+ 			qsort_interruptible(sort_table, num_mcelem, sizeof(TrackItem *),
+ 								trackitem_compare_element, NULL);
++#endif
+ 
+ 			/* Must copy the target values into anl_context */
+ 			old_context = MemoryContextSwitchTo(stats->anl_context);
+@@ -599,7 +639,11 @@ compute_array_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
+ 			{
+ 				sorted_count_items[j++] = count_item;
+ 			}
++#if defined(__CHERI_PURE_CAPABILITY__)
++			qsort_interruptible_deccountitem(sorted_count_items, count_items_count,
++#else
+ 			qsort_interruptible(sorted_count_items, count_items_count,
++#endif
+ 								sizeof(DECountItem *),
+ 								countitem_compare_count, NULL);
+ 
+@@ -755,7 +799,7 @@ element_compare(const void *key1, const void *key2)
+  * Comparator for sorting TrackItems by frequencies (descending sort)
+  */
+ static int
+-trackitem_compare_frequencies_desc(const void *e1, const void *e2, void *arg)
++trackitem_compare_frequencies_desc(void *e1, void *e2, void *arg)
+ {
+ 	const TrackItem *const *t1 = (const TrackItem *const *) e1;
+ 	const TrackItem *const *t2 = (const TrackItem *const *) e2;
+@@ -767,7 +811,7 @@ trackitem_compare_frequencies_desc(const void *e1, const void *e2, void *arg)
+  * Comparator for sorting TrackItems by element values
+  */
+ static int
+-trackitem_compare_element(const void *e1, const void *e2, void *arg)
++trackitem_compare_element(void *e1, void *e2, void *arg)
+ {
+ 	const TrackItem *const *t1 = (const TrackItem *const *) e1;
+ 	const TrackItem *const *t2 = (const TrackItem *const *) e2;
+@@ -779,7 +823,7 @@ trackitem_compare_element(const void *e1, const void *e2, void *arg)
+  * Comparator for sorting DECountItems by count
+  */
+ static int
+-countitem_compare_count(const void *e1, const void *e2, void *arg)
++countitem_compare_count(void *e1, void *e2, void *arg)
+ {
+ 	const DECountItem *const *t1 = (const DECountItem *const *) e1;
+ 	const DECountItem *const *t2 = (const DECountItem *const *) e2;
+diff --git src/backend/utils/adt/mac.c src/backend/utils/adt/mac.c
+index ac7342cfca..a1b5f5bb5a 100644
+--- src/backend/utils/adt/mac.c
++++ src/backend/utils/adt/mac.c
+@@ -490,10 +490,10 @@ macaddr_abbrev_convert(Datum original, SortSupport ssup)
+ 	 * the MAC address in. There will be two bytes of zero padding on the end
+ 	 * of the least significant bits.
+ 	 */
+-#if SIZEOF_DATUM == 8
++#if SIZEOF_DATUM >= 8
+ 	memset(&res, 0, SIZEOF_DATUM);
+ 	memcpy(&res, authoritative, sizeof(macaddr));
+-#else							/* SIZEOF_DATUM != 8 */
++#else							/* SIZEOF_DATUM < 8 */
+ 	memcpy(&res, authoritative, SIZEOF_DATUM);
+ #endif
+ 	uss->input_count += 1;
+@@ -508,9 +508,9 @@ macaddr_abbrev_convert(Datum original, SortSupport ssup)
+ 	{
+ 		uint32		tmp;
+ 
+-#if SIZEOF_DATUM == 8
++#if SIZEOF_DATUM >= 8
+ 		tmp = (uint32) res ^ (uint32) ((uint64) res >> 32);
+-#else							/* SIZEOF_DATUM != 8 */
++#else							/* SIZEOF_DATUM <  8 */
+ 		tmp = (uint32) res;
+ #endif
+ 
+diff --git src/backend/utils/adt/network.c src/backend/utils/adt/network.c
+index ea1c7390d0..a8c8b7831d 100644
+--- src/backend/utils/adt/network.c
++++ src/backend/utils/adt/network.c
+@@ -663,13 +663,28 @@ network_abbrev_convert(Datum original, SortSupport ssup)
+ 	}
+ 	else
+ 	{
+-		memcpy(&ipaddr_datum, ip_addr(authoritative), sizeof(Datum));
++#if SIZEOF_DATUM >= 8 
++		uint64		ipaddr_datum64;
++
++		memcpy(&ipaddr_datum64, ip_addr(authoritative), sizeof(uint64));
++
++		/* Must byteswap on little-endian machines */
++		ipaddr_datum = DatumBigEndianToNative(ipaddr_datum64);
++#else
++		uint32		ipaddr_datum32;
++
++		memcpy(&ipaddr_datum32, ip_addr(authoritative), sizeof(uint32));
+ 
+ 		/* Must byteswap on little-endian machines */
+-		ipaddr_datum = DatumBigEndianToNative(ipaddr_datum);
++		ipaddr_datum = DatumBigEndianToNative(ipaddr_datum32);
++#endif
+ 
+ 		/* Initialize result with ipfamily (most significant) bit set */
++#if defined(__CHERI_PURE_CAPABILITY__)
++		res = ((Datum) 1) << (SIZEOF_DATUM / 2 * BITS_PER_BYTE - 1);
++#else
+ 		res = ((Datum) 1) << (SIZEOF_DATUM * BITS_PER_BYTE - 1);
++#endif
+ 	}
+ 
+ 	/*
+@@ -691,14 +706,22 @@ network_abbrev_convert(Datum original, SortSupport ssup)
+ 	subnet_size = ip_maxbits(authoritative) - ip_bits(authoritative);
+ 	Assert(subnet_size >= 0);
+ 	/* subnet size must work with prefix ipaddr cases */
++#if defined(__CHERI_PURE_CAPABILITY__)
++	subnet_size %= SIZEOF_DATUM / 2 * BITS_PER_BYTE;
++#else
+ 	subnet_size %= SIZEOF_DATUM * BITS_PER_BYTE;
++#endif
+ 	if (ip_bits(authoritative) == 0)
+ 	{
+ 		/* Fit as many ipaddr bits as possible into subnet */
+ 		subnet_bitmask = ((Datum) 0) - 1;
+ 		network = 0;
+ 	}
++#if defined(__CHERI_PURE_CAPABILITY__)
++	else if (ip_bits(authoritative) < SIZEOF_DATUM / 2 * BITS_PER_BYTE)
++#else
+ 	else if (ip_bits(authoritative) < SIZEOF_DATUM * BITS_PER_BYTE)
++#endif
+ 	{
+ 		/* Split ipaddr bits between network and subnet */
+ 		subnet_bitmask = (((Datum) 1) << subnet_size) - 1;
+@@ -711,7 +734,7 @@ network_abbrev_convert(Datum original, SortSupport ssup)
+ 		network = ipaddr_datum;
+ 	}
+ 
+-#if SIZEOF_DATUM == 8
++#if SIZEOF_DATUM >= 8
+ 	if (ip_family(authoritative) == PGSQL_AF_INET)
+ 	{
+ 		/*
+@@ -777,7 +800,7 @@ network_abbrev_convert(Datum original, SortSupport ssup)
+ 	{
+ 		uint32		tmp;
+ 
+-#if SIZEOF_DATUM == 8
++#if SIZEOF_DATUM >= 8
+ 		tmp = (uint32) res ^ (uint32) ((uint64) res >> 32);
+ #else							/* SIZEOF_DATUM != 8 */
+ 		tmp = (uint32) res;
+diff --git src/backend/utils/adt/numeric.c src/backend/utils/adt/numeric.c
+index 920a63b008..e1341d3c32 100644
+--- src/backend/utils/adt/numeric.c
++++ src/backend/utils/adt/numeric.c
+@@ -392,14 +392,16 @@ typedef struct NumericSumAccum
+  * comments below).  PINF and NINF share the abbreviations of the largest
+  * and smallest finite abbreviation classes.
+  */
+-#define NUMERIC_ABBREV_BITS (SIZEOF_DATUM * BITS_PER_BYTE)
+-#if SIZEOF_DATUM == 8
++#if SIZEOF_DATUM >= 8
++// If sizeof(void *) > 8 we still only want to use 64 bits here.
++#define NUMERIC_ABBREV_BITS 64 
+ #define NumericAbbrevGetDatum(X) ((Datum) (X))
+ #define DatumGetNumericAbbrev(X) ((int64) (X))
+ #define NUMERIC_ABBREV_NAN		 NumericAbbrevGetDatum(PG_INT64_MIN)
+ #define NUMERIC_ABBREV_PINF		 NumericAbbrevGetDatum(-PG_INT64_MAX)
+ #define NUMERIC_ABBREV_NINF		 NumericAbbrevGetDatum(PG_INT64_MAX)
+ #else
++#define NUMERIC_ABBREV_BITS (SIZEOF_DATUM * BITS_PER_BYTE)
+ #define NumericAbbrevGetDatum(X) ((Datum) (X))
+ #define DatumGetNumericAbbrev(X) ((int32) (X))
+ #define NUMERIC_ABBREV_NAN		 NumericAbbrevGetDatum(PG_INT32_MIN)
+diff --git src/backend/utils/adt/rangetypes_typanalyze.c src/backend/utils/adt/rangetypes_typanalyze.c
+index 2043d3f98b..e3279e41a2 100644
+--- src/backend/utils/adt/rangetypes_typanalyze.c
++++ src/backend/utils/adt/rangetypes_typanalyze.c
+@@ -32,6 +32,21 @@
+ #include "utils/rangetypes.h"
+ #include "utils/multirangetypes.h"
+ 
++#if defined(__CHERI_PURE_CAPABILITY__)
++#include "postgres.h"
++#include "miscadmin.h"
++
++#define ST_SORT qsort_interruptible_rangebound
++#define ST_ELEMENT_TYPE RangeBound
++#define ST_COMPARATOR_TYPE_NAME qsort_arg_comparator
++#define ST_COMPARE_RUNTIME_POINTER
++#define ST_COMPARE_ARG_TYPE struct TypeCacheEntry
++#define ST_SCOPE static
++#define ST_DEFINE
++#define ST_CHECK_FOR_INTERRUPTS
++#include "lib/sort_template.h"
++#endif
++
+ static int	float8_qsort_cmp(const void *a1, const void *a2, void *arg);
+ static int	range_bound_qsort_cmp(const void *a1, const void *a2, void *arg);
+ static void compute_range_stats(VacAttrStats *stats,
+@@ -280,10 +295,17 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
+ 		if (non_empty_cnt >= 2)
+ 		{
+ 			/* Sort bound values */
++#if defined(__CHERI_PURE_CAPABILITY__)
++			qsort_interruptible_rangebound(lowers, non_empty_cnt,
++								range_bound_qsort_cmp, typcache);
++			qsort_interruptible_rangebound(uppers, non_empty_cnt,
++								range_bound_qsort_cmp, typcache);
++#else
+ 			qsort_interruptible(lowers, non_empty_cnt, sizeof(RangeBound),
+ 								range_bound_qsort_cmp, typcache);
+ 			qsort_interruptible(uppers, non_empty_cnt, sizeof(RangeBound),
+ 								range_bound_qsort_cmp, typcache);
++#endif
+ 
+ 			num_hist = non_empty_cnt;
+ 			if (num_hist > num_bins)
+diff --git src/backend/utils/adt/uuid.c src/backend/utils/adt/uuid.c
+index 7cec937248..202b2bd1a4 100644
+--- src/backend/utils/adt/uuid.c
++++ src/backend/utils/adt/uuid.c
+@@ -363,7 +363,7 @@ uuid_abbrev_convert(Datum original, SortSupport ssup)
+ 	{
+ 		uint32		tmp;
+ 
+-#if SIZEOF_DATUM == 8
++#if SIZEOF_DATUM >= 8
+ 		tmp = (uint32) res ^ (uint32) ((uint64) res >> 32);
+ #else							/* SIZEOF_DATUM != 8 */
+ 		tmp = (uint32) res;
+diff --git src/backend/utils/adt/varlena.c src/backend/utils/adt/varlena.c
+index 8539cef024..670fbb11b3 100644
+--- src/backend/utils/adt/varlena.c
++++ src/backend/utils/adt/varlena.c
+@@ -2646,7 +2646,7 @@ varstr_abbrev_convert(Datum original, SortSupport ssup)
+ 	addHyperLogLog(&sss->full_card, hash);
+ 
+ 	/* Hash abbreviated key */
+-#if SIZEOF_DATUM == 8
++#if SIZEOF_DATUM >= 8
+ 	{
+ 		uint32		lohalf,
+ 					hihalf;
+@@ -2655,7 +2655,7 @@ varstr_abbrev_convert(Datum original, SortSupport ssup)
+ 		hihalf = (uint32) (res >> 32);
+ 		hash = DatumGetUInt32(hash_uint32(lohalf ^ hihalf));
+ 	}
+-#else							/* SIZEOF_DATUM != 8 */
++#else							/* SIZEOF_DATUM < 8 */
+ 	hash = DatumGetUInt32(hash_uint32((uint32) res));
+ #endif
+ 
+diff --git src/backend/utils/mmgr/aset.c src/backend/utils/mmgr/aset.c
+index ec3e264a73..d5c25de475 100644
+--- src/backend/utils/mmgr/aset.c
++++ src/backend/utils/mmgr/aset.c
+@@ -76,7 +76,11 @@
+  *--------------------
+  */
+ 
++#if defined(__CHERI_PURE_CAPABILITY__)
++#define ALLOC_MINBITS		4	/* smallest chunk size is 16 bytes */
++#else
+ #define ALLOC_MINBITS		3	/* smallest chunk size is 8 bytes */
++#endif // __CHERI_PURE_CAPABILITY__
+ #define ALLOCSET_NUM_FREELISTS	11
+ #define ALLOC_CHUNK_LIMIT	(1 << (ALLOCSET_NUM_FREELISTS-1+ALLOC_MINBITS))
+ /* Size of largest chunk that we use a fixed size for */
+@@ -180,7 +184,15 @@ typedef struct AllocChunkData
+ 
+ #define ALLOCCHUNK_RAWSIZE  (SIZEOF_SIZE_T * 2 + SIZEOF_VOID_P)
+ #else
++#if defined(__CHERI_PURE_CAPABILITY__)
++// The stronger alignment requirements for void* on CHERI, result in padding being added
++// between the size (or requested_size) field and the aset field. Mvoing the aset
++// field invalidates other asserts. Therefore, an additional padding of size_t
++// has been manually added.
++#define ALLOCCHUNK_RAWSIZE  (SIZEOF_SIZE_T + SIZEOF_VOID_P) + SIZEOF_SIZE_T
++#else
+ #define ALLOCCHUNK_RAWSIZE  (SIZEOF_SIZE_T + SIZEOF_VOID_P)
++#endif
+ #endif							/* MEMORY_CONTEXT_CHECKING */
+ 
+ 	/* ensure proper alignment by adding padding if needed */
+diff --git src/backend/utils/sort/Makefile src/backend/utils/sort/Makefile
+index 2c31fd453d..4627cd50d3 100644
+--- src/backend/utils/sort/Makefile
++++ src/backend/utils/sort/Makefile
+@@ -17,6 +17,7 @@ override CPPFLAGS := -I. -I$(srcdir) $(CPPFLAGS)
+ OBJS = \
+ 	logtape.o \
+ 	qsort_interruptible.o \
++	qsort_interruptible_sortitem.o \
+ 	sharedtuplestore.o \
+ 	sortsupport.o \
+ 	tuplesort.o \
+diff --git src/backend/utils/sort/qsort_interruptible_sortitem.c src/backend/utils/sort/qsort_interruptible_sortitem.c
+new file mode 100644
+index 0000000000..0feeacef23
+--- /dev/null
++++ src/backend/utils/sort/qsort_interruptible_sortitem.c
+@@ -0,0 +1,17 @@
++/*
++ *	qsort_interruptible.c: qsort_arg that includes CHECK_FOR_INTERRUPTS
++ */
++
++#include "postgres.h"
++#include "miscadmin.h"
++#include "statistics/extended_stats_internal.h"
++
++#define ST_SORT qsort_interruptible_sortitem
++#define ST_ELEMENT_TYPE SortItem
++#define ST_COMPARATOR_TYPE_NAME qsort_arg_comparator
++#define ST_COMPARE_RUNTIME_POINTER
++#define ST_COMPARE_ARG_TYPE void 
++#define ST_SCOPE
++#define ST_DEFINE
++#define ST_CHECK_FOR_INTERRUPTS
++#include "lib/sort_template.h"
+diff --git src/bin/initdb/initdb.c src/bin/initdb/initdb.c
+index 89b888eaa5..80673c60d7 100644
+--- src/bin/initdb/initdb.c
++++ src/bin/initdb/initdb.c
+@@ -1342,8 +1342,7 @@ bootstrap_template1(void)
+ 	sprintf(buf, "%d", (int) sizeof(Pointer));
+ 	bki_lines = replace_token(bki_lines, "SIZEOF_POINTER", buf);
+ 
+-	bki_lines = replace_token(bki_lines, "ALIGNOF_POINTER",
+-							  (sizeof(Pointer) == 4) ? "i" : "d");
++	bki_lines = replace_token(bki_lines, "ALIGNOF_POINTER", "p");
+ 
+ 	bki_lines = replace_token(bki_lines, "FLOAT8PASSBYVAL",
+ 							  FLOAT8PASSBYVAL ? "true" : "false");
+diff --git src/bin/pg_dump/pg_dump.c src/bin/pg_dump/pg_dump.c
+index 3ca046f066..5022f78b5e 100644
+--- src/bin/pg_dump/pg_dump.c
++++ src/bin/pg_dump/pg_dump.c
+@@ -10775,6 +10775,8 @@ dumpBaseType(Archive *fout, const TypeInfo *tyinfo)
+ 		appendPQExpBufferStr(q, ",\n    ALIGNMENT = int4");
+ 	else if (*typalign == TYPALIGN_DOUBLE)
+ 		appendPQExpBufferStr(q, ",\n    ALIGNMENT = double");
++	else if (*typalign == TYPALIGN_POINTER)
++		appendPQExpBufferStr(q, ",\n    ALIGNMENT = pointer");
+ 
+ 	if (*typstorage == TYPSTORAGE_PLAIN)
+ 		appendPQExpBufferStr(q, ",\n    STORAGE = plain");
+diff --git src/include/access/tupmacs.h src/include/access/tupmacs.h
+index 16c74a581e..10c4850945 100644
+--- src/include/access/tupmacs.h
++++ src/include/access/tupmacs.h
+@@ -43,14 +43,18 @@
+ /*
+  * Same, but work from byval/len parameters rather than Form_pg_attribute.
+  */
+-#if SIZEOF_DATUM == 8
++#if SIZEOF_DATUM >= 8
+ 
+ #define fetch_att(T,attbyval,attlen) \
+ ( \
+ 	(attbyval) ? \
+ 	( \
+ 		(attlen) == (int) sizeof(Datum) ? \
+-			*((Datum *)(T)) \
++			*((Datum *) T) \
++		: \
++	( \
++		(attlen) == (int) sizeof(int64) ? \
++			Int64GetDatum(*((int64 *)(T))) \
+ 		: \
+ 	  ( \
+ 		(attlen) == (int) sizeof(int32) ? \
+@@ -67,10 +71,11 @@
+ 		) \
+ 	  ) \
+ 	) \
++	) \
+ 	: \
+ 	PointerGetDatum((char *) (T)) \
+ )
+-#else							/* SIZEOF_DATUM != 8 */
++#else							/* SIZEOF_DATUM < 8 */
+ 
+ #define fetch_att(T,attbyval,attlen) \
+ ( \
+@@ -92,7 +97,7 @@
+ 	: \
+ 	PointerGetDatum((char *) (T)) \
+ )
+-#endif							/* SIZEOF_DATUM == 8 */
++#endif							/* SIZEOF_DATUM >= 8 */
+ 
+ /*
+  * att_align_datum aligns the given offset as needed for a datum of alignment
+@@ -150,10 +155,11 @@
+ 	((attalign) == TYPALIGN_INT) ? INTALIGN(cur_offset) : \
+ 	 (((attalign) == TYPALIGN_CHAR) ? (uintptr_t) (cur_offset) : \
+ 	  (((attalign) == TYPALIGN_DOUBLE) ? DOUBLEALIGN(cur_offset) : \
+-	   ( \
++	    (((attalign) == TYPALIGN_POINTER) ? MAXALIGN(cur_offset) : \
++	      ( \
+ 			AssertMacro((attalign) == TYPALIGN_SHORT), \
+ 			SHORTALIGN(cur_offset) \
+-	   ))) \
++	     )))) \
+ )
+ 
+ /*
+@@ -197,7 +203,7 @@
+  * distinguish by-val and by-ref cases anyway, and so a do-it-all macro
+  * wouldn't be convenient.
+  */
+-#if SIZEOF_DATUM == 8
++#if SIZEOF_DATUM >= 8
+ 
+ #define store_att_byval(T,newdatum,attlen) \
+ 	do { \
+@@ -212,8 +218,11 @@
+ 			case sizeof(int32): \
+ 				*(int32 *) (T) = DatumGetInt32(newdatum); \
+ 				break; \
++			case sizeof(int64): \
++				*(int64 *) (T) = DatumGetInt64(newdatum); \
++				break; \
+ 			case sizeof(Datum): \
+-				*(Datum *) (T) = (newdatum); \
++				*(Datum *) T = newdatum; \
+ 				break; \
+ 			default: \
+ 				elog(ERROR, "unsupported byval length: %d", \
+@@ -221,7 +230,7 @@
+ 				break; \
+ 		} \
+ 	} while (0)
+-#else							/* SIZEOF_DATUM != 8 */
++#else							/* SIZEOF_DATUM < 8 */
+ 
+ #define store_att_byval(T,newdatum,attlen) \
+ 	do { \
+@@ -236,12 +245,15 @@
+ 			case sizeof(int32): \
+ 				*(int32 *) (T) = DatumGetInt32(newdatum); \
+ 				break; \
++			case sizeof(int64): \
++				*(int64 *) (T) = DatumGetInt64(newdatum); \
++				break; \
+ 			default: \
+-				elog(ERROR, "unsupported byval length: %d", \
+-					 (int) (attlen)); \
++				elog(ERROR, "unsupported byval length: %d (%d)", \
++					 (int) (attlen), __LINE__); \
+ 				break; \
+ 		} \
+ 	} while (0)
+-#endif							/* SIZEOF_DATUM == 8 */
++#endif							/* SIZEOF_DATUM >= 8 */
+ 
+ #endif
+diff --git src/include/c.h src/include/c.h
+index 4f16e589b3..05f2c40dfa 100644
+--- src/include/c.h
++++ src/include/c.h
+@@ -75,6 +75,10 @@
+ #include <libintl.h>
+ #endif
+ 
++#if defined(__CHERI_PURE_CAPABILITY__)
++#include <stdalign.h>
++#include <stddef.h>
++#endif
+ 
+ /* ----------------------------------------------------------------
+  *				Section 1: compiler characteristics
+@@ -654,6 +658,10 @@ typedef struct
+ 	Oid			elemtype;
+ 	int			dim1;
+ 	int			lbound1;
++#if defined(__CHERI_PURE_CAPABILITY__)
++	// Access through the ARR_DATA_PTR macro is aligned to MAXALIGN.
++	alignas(alignof(max_align_t))
++#endif
+ 	int16		values[FLEXIBLE_ARRAY_MEMBER];
+ } int2vector;
+ 
+@@ -665,6 +673,10 @@ typedef struct
+ 	Oid			elemtype;
+ 	int			dim1;
+ 	int			lbound1;
++#if defined(__CHERI_PURE_CAPABILITY__)
++	// Access through the ARR_DATA_PTR macro is aligned to MAXALIGN.
++	alignas(alignof(max_align_t))
++#endif
+ 	Oid			values[FLEXIBLE_ARRAY_MEMBER];
+ } oidvector;
+ 
+@@ -746,10 +758,19 @@ typedef NameData *Name;
+  * larger-than-8-byte types the compiler might have.
+  * ----------------
+  */
+-
+ #define TYPEALIGN(ALIGNVAL,LEN)  \
+ 	(((uintptr_t) (LEN) + ((ALIGNVAL) - 1)) & ~((uintptr_t) ((ALIGNVAL) - 1)))
+ 
++#if __has_builtin(__builtin_align_up)
++#define SHORTALIGN(LEN)			__builtin_align_up(LEN, ALIGNOF_SHORT)
++#define INTALIGN(LEN)			__builtin_align_up(LEN, ALIGNOF_INT)
++#define LONGALIGN(LEN)			__builtin_align_up(LEN, ALIGNOF_LONG)
++#define DOUBLEALIGN(LEN)		__builtin_align_up(LEN, ALIGNOF_DOUBLE)
++#define MAXALIGN(LEN)			__builtin_align_up(LEN, MAXIMUM_ALIGNOF)
++/* MAXALIGN covers only built-in types, not buffers */
++#define BUFFERALIGN(LEN)		__builtin_align_up(LEN, ALIGNOF_BUFFER)
++#define CACHELINEALIGN(LEN)		__builtin_align_up(LEN, PG_CACHE_LINE_SIZE)
++#else
+ #define SHORTALIGN(LEN)			TYPEALIGN(ALIGNOF_SHORT, (LEN))
+ #define INTALIGN(LEN)			TYPEALIGN(ALIGNOF_INT, (LEN))
+ #define LONGALIGN(LEN)			TYPEALIGN(ALIGNOF_LONG, (LEN))
+@@ -758,17 +779,30 @@ typedef NameData *Name;
+ /* MAXALIGN covers only built-in types, not buffers */
+ #define BUFFERALIGN(LEN)		TYPEALIGN(ALIGNOF_BUFFER, (LEN))
+ #define CACHELINEALIGN(LEN)		TYPEALIGN(PG_CACHE_LINE_SIZE, (LEN))
++#endif
+ 
+ #define TYPEALIGN_DOWN(ALIGNVAL,LEN)  \
+ 	(((uintptr_t) (LEN)) & ~((uintptr_t) ((ALIGNVAL) - 1)))
+ 
++#if __has_builtin(__builtin_align_down)
++#define SHORTALIGN_DOWN(LEN)		__builtin_align_down(LEN, ALIGNOF_SHORT)
++#define INTALIGN_DOWN(LEN)		__builtin_align_down(LEN, ALIGNOF_INT)
++#define LONGALIGN_DOWN(LEN)		__builtin_align_down(LEN, ALIGNOF_LONG)
++#define DOUBLEALIGN_DOWN(LEN)		__builtin_align_down(LEN, ALIGNOF_DOUBLE)
++#define MAXALIGN_DOWN(LEN)		__builtin_align_down(LEN, MAXIMUM_ALIGNOF)
++#define BUFFERALIGN_DOWN(LEN)		__builtin_align_down(LEN, ALIGNOF_BUFFER)
++#else
+ #define SHORTALIGN_DOWN(LEN)	TYPEALIGN_DOWN(ALIGNOF_SHORT, (LEN))
+ #define INTALIGN_DOWN(LEN)		TYPEALIGN_DOWN(ALIGNOF_INT, (LEN))
+ #define LONGALIGN_DOWN(LEN)		TYPEALIGN_DOWN(ALIGNOF_LONG, (LEN))
+ #define DOUBLEALIGN_DOWN(LEN)	TYPEALIGN_DOWN(ALIGNOF_DOUBLE, (LEN))
+ #define MAXALIGN_DOWN(LEN)		TYPEALIGN_DOWN(MAXIMUM_ALIGNOF, (LEN))
+ #define BUFFERALIGN_DOWN(LEN)	TYPEALIGN_DOWN(ALIGNOF_BUFFER, (LEN))
++#endif
+ 
++#if __has_builtin(__builtin_align_up)
++#define MAXALIGN64(LEN)			__builtin_align_up(LEN, MAXIMUM_ALIGNOF)
++#else
+ /*
+  * The above macros will not work with types wider than uintptr_t, like with
+  * uint64 on 32-bit platforms.  That's not problem for the usual use where a
+@@ -780,7 +814,7 @@ typedef NameData *Name;
+ 
+ /* we don't currently need wider versions of the other ALIGN macros */
+ #define MAXALIGN64(LEN)			TYPEALIGN64(MAXIMUM_ALIGNOF, (LEN))
+-
++#endif
+ 
+ /* ----------------------------------------------------------------
+  *				Section 6:	assertions
+diff --git src/include/catalog/pg_type.dat src/include/catalog/pg_type.dat
+index df45879463..fcd23e9b3c 100644
+--- src/include/catalog/pg_type.dat
++++ src/include/catalog/pg_type.dat
+@@ -68,7 +68,7 @@
+   typsubscript => 'array_subscript_handler', typelem => 'int2',
+   typinput => 'int2vectorin', typoutput => 'int2vectorout',
+   typreceive => 'int2vectorrecv', typsend => 'int2vectorsend',
+-  typalign => 'i' },
++  typalign => 'p' },
+ { oid => '23', array_type_oid => '1007',
+   descr => '-2 billion to 2 billion integer, 4-byte storage',
+   typname => 'int4', typlen => '4', typbyval => 't', typcategory => 'N',
+@@ -108,7 +108,7 @@
+   typname => 'oidvector', typlen => '-1', typbyval => 'f', typcategory => 'A',
+   typsubscript => 'array_subscript_handler', typelem => 'oid',
+   typinput => 'oidvectorin', typoutput => 'oidvectorout',
+-  typreceive => 'oidvectorrecv', typsend => 'oidvectorsend', typalign => 'i' },
++  typreceive => 'oidvectorrecv', typsend => 'oidvectorsend', typalign => 'p' },
+ 
+ # hand-built rowtype entries for bootstrapped catalogs
+ # NB: OIDs assigned here must match the BKI_ROWTYPE_OID declarations
+diff --git src/include/catalog/pg_type.h src/include/catalog/pg_type.h
+index 48a2559137..bd0d8eef87 100644
+--- src/include/catalog/pg_type.h
++++ src/include/catalog/pg_type.h
+@@ -300,6 +300,7 @@ DECLARE_UNIQUE_INDEX(pg_type_typname_nsp_index, 2704, TypeNameNspIndexId, on pg_
+ #define  TYPALIGN_SHORT			's' /* short alignment (typically 2 bytes) */
+ #define  TYPALIGN_INT			'i' /* int alignment (typically 4 bytes) */
+ #define  TYPALIGN_DOUBLE		'd' /* double alignment (often 8 bytes) */
++#define  TYPALIGN_POINTER		'p' /* pointer alignment */
+ 
+ #define  TYPSTORAGE_PLAIN		'p' /* type not prepared for toasting */
+ #define  TYPSTORAGE_EXTERNAL	'e' /* toastable, don't try to compress */
+diff --git src/include/lib/sort_template.h src/include/lib/sort_template.h
+index 3122a93009..f25c133224 100644
+--- src/include/lib/sort_template.h
++++ src/include/lib/sort_template.h
+@@ -233,11 +233,18 @@ ST_SCOPE void ST_SORT(ST_ELEMENT_TYPE * first, size_t n
+ #define DO_SWAPN(a_, b_, n_) ST_SWAPN((a_), (b_), (n_))
+ #define DO_SWAP(a_, b_) ST_SWAP((a_), (b_))
+ #else
++#if defined(__CHERI_PURE_CAPABILITY__) && defined(ST_CAPABILITY)
++#define ST_POINTER_TYPE uintptr_t
++#define ST_POINTER_STEP 1
++#define DO_SWAPN(a_, b_, n_) ST_SWAPN((a_), (b_), (n_))
++#define DO_SWAP(a_, b_) DO_SWAPN((a_), (b_), 1)
++#else
+ #define ST_POINTER_TYPE uint8
+ #define ST_POINTER_STEP element_size
+ #define DO_SWAPN(a_, b_, n_) ST_SWAPN((a_), (b_), (n_))
+ #define DO_SWAP(a_, b_) DO_SWAPN((a_), (b_), element_size)
+ #endif
++#endif
+ 
+ /*
+  * Find the median of three values.  Currently, performance seems to be best
+diff --git src/include/port.h src/include/port.h
+index e647f62b77..fe0cf89ce7 100644
+--- src/include/port.h
++++ src/include/port.h
+@@ -492,15 +492,33 @@ extern void pg_qsort(void *base, size_t nel, size_t elsize,
+ 					 int (*cmp) (const void *, const void *));
+ extern int	pg_qsort_strcmp(const void *a, const void *b);
+ 
+-#define qsort(a,b,c,d) pg_qsort(a,b,c,d)
+-
+ typedef int (*qsort_arg_comparator) (const void *a, const void *b, void *arg);
+ 
++/* Use ifdef FreeBSD and not __CHERI_PURE_CAPABILITY__ so that we use the same code path for MIPS and CHERI */
++#ifdef __FreeBSD__
++/*
++ * XXXAR: the postgres version of qsort_arg does not work with capabilities (swap
++ * is broken) so we have to make sure to use the libc function qsort_s instead
++ */
++static inline void
++qsort_arg(void *a, size_t n, size_t es, qsort_arg_comparator cmp, void *arg)
++{
++	qsort_s(a, n, es, cmp, arg);
++}
++#else
++#warning "Using postgres qsort"
++#define qsort(a,b,c,d) pg_qsort(a,b,c,d)
++
+ extern void qsort_arg(void *base, size_t nel, size_t elsize,
+ 					  qsort_arg_comparator cmp, void *arg);
++#endif
+ 
+ extern void qsort_interruptible(void *base, size_t nel, size_t elsize,
+ 								qsort_arg_comparator cmp, void *arg);
++#if defined(__CHERI_PURE_CAPABILITY__)
++typedef struct SortItem SortItem;
++extern void qsort_interruptible_sortitem(SortItem *base, size_t nel, qsort_arg_comparator cmp, void *arg);
++#endif
+ 
+ extern void *bsearch_arg(const void *key, const void *base,
+ 						 size_t nmemb, size_t size,
+diff --git src/include/port/pg_bswap.h src/include/port/pg_bswap.h
+index 4033d2bf39..4d2b98714f 100644
+--- src/include/port/pg_bswap.h
++++ src/include/port/pg_bswap.h
+@@ -150,11 +150,11 @@ pg_bswap64(uint64 x)
+ #ifdef WORDS_BIGENDIAN
+ #define		DatumBigEndianToNative(x)	(x)
+ #else							/* !WORDS_BIGENDIAN */
+-#if SIZEOF_DATUM == 8
++#if SIZEOF_DATUM >= 8
+ #define		DatumBigEndianToNative(x)	pg_bswap64(x)
+-#else							/* SIZEOF_DATUM != 8 */
++#else							/* SIZEOF_DATUM < 8 */
+ #define		DatumBigEndianToNative(x)	pg_bswap32(x)
+-#endif							/* SIZEOF_DATUM == 8 */
++#endif							/* SIZEOF_DATUM >= 8 */
+ #endif							/* WORDS_BIGENDIAN */
+ #endif							/* SIZEOF_DATUM */
+ 
+diff --git src/include/postgres.h src/include/postgres.h
+index 31358110dc..d955087900 100644
+--- src/include/postgres.h
++++ src/include/postgres.h
+@@ -43,6 +43,11 @@
+ #ifndef POSTGRES_H
+ #define POSTGRES_H
+ 
++#if defined(__CHERI_PURE_CAPABILITY__)
++#include <stdalign.h>
++#include <stddef.h>
++#endif
++
+ #include "c.h"
+ #include "utils/elog.h"
+ #include "utils/palloc.h"
+@@ -172,7 +177,14 @@ typedef struct
+ {
+ 	uint8		va_header;		/* Always 0x80 or 0x01 */
+ 	uint8		va_tag;			/* Type of datum */
++#if defined(__CHERI_PURE_CAPABILITY__)
++	/* Ensure alignement of max_align_t as a capability is stored
++	 * in va_data in the function EOH_init_header.
++	 */
++	alignas(alignof(max_align_t)) char	va_data[FLEXIBLE_ARRAY_MEMBER]; /* Type-specific data */
++#else
+ 	char		va_data[FLEXIBLE_ARRAY_MEMBER]; /* Type-specific data */
++#endif
+ } varattrib_1b_e;
+ 
+ /*
+diff --git src/include/tsearch/ts_type.h src/include/tsearch/ts_type.h
+index 689b2d1cfb..4450d507ea 100644
+--- src/include/tsearch/ts_type.h
++++ src/include/tsearch/ts_type.h
+@@ -91,6 +91,9 @@ typedef struct
+ {
+ 	int32		vl_len_;		/* varlena header (do not touch directly!) */
+ 	int32		size;
++#if defined(__CHERI_PURE_CAPABILITY__)
++	alignas(alignof(max_align_t))
++#endif
+ 	WordEntry	entries[FLEXIBLE_ARRAY_MEMBER];
+ 	/* lexemes follow the entries[] array */
+ } TSVectorData;
+diff --git src/include/utils/memutils.h src/include/utils/memutils.h
+index 495d1af201..16c74f91d5 100644
+--- src/include/utils/memutils.h
++++ src/include/utils/memutils.h
+@@ -221,7 +221,11 @@ extern MemoryContext GenerationContextCreate(MemoryContext parent,
+  * Few callers should be interested in this, but tuplesort/tuplestore need
+  * to know it.
+  */
++#if defined(__CHERI_PURE_CAPABILITY__)
++#define ALLOCSET_SEPARATE_THRESHOLD  16384
++#else
+ #define ALLOCSET_SEPARATE_THRESHOLD  8192
++#endif
+ 
+ #define SLAB_DEFAULT_BLOCK_SIZE		(8 * 1024)
+ #define SLAB_LARGE_BLOCK_SIZE		(8 * 1024 * 1024)
+diff --git src/include/utils/rangetypes.h src/include/utils/rangetypes.h
+index 993fad4fc2..88d946b5ca 100644
+--- src/include/utils/rangetypes.h
++++ src/include/utils/rangetypes.h
+@@ -14,6 +14,11 @@
+ #ifndef RANGETYPES_H
+ #define RANGETYPES_H
+ 
++#if defined(__CHERI_PURE_CAPABILITY__)
++#include <stdalign.h>
++#include <stddef.h>
++#endif
++
+ #include "utils/typcache.h"
+ 
+ 
+@@ -24,6 +29,9 @@
+  */
+ typedef struct
+ {
++#if defined(__CHERI_PURE_CAPABILITY__)
++	alignas(alignof(max_align_t))
++#endif
+ 	int32		vl_len_;		/* varlena header (do not touch directly!) */
+ 	Oid			rangetypid;		/* range type's own OID */
+ 	/* Following the OID are zero to two bound values, then a flags byte */
+diff --git src/port/qsort.c src/port/qsort.c
+index 7879e6cd56..8a75ff492e 100644
+--- src/port/qsort.c
++++ src/port/qsort.c
+@@ -1,16 +1,245 @@
+ /*
+  *	qsort.c: standard quicksort algorithm
++ *
++ *	Modifications from vanilla NetBSD source:
++ *	  Add do ... while() macro fix
++ *	  Remove __inline, _DIAGASSERTs, __P
++ *	  Remove ill-considered "swap_cnt" switch to insertion sort,
++ *	  in favor of a simple check for presorted input.
++ *	  Take care to recurse on the smaller partition, to bound stack usage.
++ *
++ *	CAUTION: if you change this file, see also qsort_arg.c, gen_qsort_tuple.pl
++ *
++ *	src/port/qsort.c
++ */
++
++/*	$NetBSD: qsort.c,v 1.13 2003/08/07 16:43:42 agc Exp $	*/
++
++/*-
++ * Copyright (c) 1992, 1993
++ *	The Regents of the University of California.  All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ * 1. Redistributions of source code must retain the above copyright
++ *	  notice, this list of conditions and the following disclaimer.
++ * 2. Redistributions in binary form must reproduce the above copyright
++ *	  notice, this list of conditions and the following disclaimer in the
++ *	  documentation and/or other materials provided with the distribution.
++ * 3. Neither the name of the University nor the names of its contributors
++ *	  may be used to endorse or promote products derived from this software
++ *	  without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS'' AND
++ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
++ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
++ * ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
++ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
++ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
++ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
++ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
++ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
++ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
++ * SUCH DAMAGE.
+  */
+ 
+ #include "c.h"
+ 
+-#define ST_SORT pg_qsort
+-#define ST_ELEMENT_TYPE_VOID
+-#define ST_COMPARE_RUNTIME_POINTER
+-#define ST_SCOPE
+-#define ST_DECLARE
+-#define ST_DEFINE
+-#include "lib/sort_template.h"
++#ifdef __FreeBSD__
++/*
++ * XXXAR: the postgres version of qsort does not work with capabilities (swap
++ * is broken) so we have to make sure to use the libc version
++ */
++void
++pg_qsort(void *a, size_t n, size_t es, int (*cmp) (const void *, const void *))
++{
++	/* postgres #defines qsort to pg_qsort... */
++#undef qsort
++	qsort(a, n, es, cmp);
++}
++
++#else
++#warning "using postgres custom qsort function"
++
++static char *med3(char *a, char *b, char *c,
++	 int (*cmp) (const void *, const void *));
++static void swapfunc(char *, char *, size_t, int);
++
++/*
++ * Qsort routine based on J. L. Bentley and M. D. McIlroy,
++ * "Engineering a sort function",
++ * Software--Practice and Experience 23 (1993) 1249-1265.
++ *
++ * We have modified their original by adding a check for already-sorted input,
++ * which seems to be a win per discussions on pgsql-hackers around 2006-03-21.
++ *
++ * Also, we recurse on the smaller partition and iterate on the larger one,
++ * which ensures we cannot recurse more than log(N) levels (since the
++ * partition recursed to is surely no more than half of the input).  Bentley
++ * and McIlroy explicitly rejected doing this on the grounds that it's "not
++ * worth the effort", but we have seen crashes in the field due to stack
++ * overrun, so that judgment seems wrong.
++ */
++
++#define swapcode(TYPE, parmi, parmj, n) \
++do {		\
++	size_t i = (n) / sizeof (TYPE);			\
++	TYPE *pi = (TYPE *)(void *)(parmi);			\
++	TYPE *pj = (TYPE *)(void *)(parmj);			\
++	do {						\
++		TYPE	t = *pi;			\
++		*pi++ = *pj;				\
++		*pj++ = t;				\
++		} while (--i > 0);				\
++} while (0)
++
++#define SWAPINIT(a, es) swaptype = ((char *)(a) - (char *)0) % sizeof(long) || \
++	(es) % sizeof(long) ? 2 : (es) == sizeof(long)? 0 : 1;
++
++static void
++swapfunc(char *a, char *b, size_t n, int swaptype)
++{
++	if (swaptype <= 1)
++		swapcode(long, a, b, n);
++	else
++		swapcode(char, a, b, n);
++}
++
++#define swap(a, b)						\
++	if (swaptype == 0) {					\
++		long t = *(long *)(void *)(a);			\
++		*(long *)(void *)(a) = *(long *)(void *)(b);	\
++		*(long *)(void *)(b) = t;			\
++	} else							\
++		swapfunc(a, b, es, swaptype)
++
++#define vecswap(a, b, n) if ((n) > 0) swapfunc(a, b, n, swaptype)
++
++static char *
++med3(char *a, char *b, char *c, int (*cmp) (const void *, const void *))
++{
++	return cmp(a, b) < 0 ?
++		(cmp(b, c) < 0 ? b : (cmp(a, c) < 0 ? c : a))
++		: (cmp(b, c) > 0 ? b : (cmp(a, c) < 0 ? a : c));
++}
++
++void
++pg_qsort(void *a, size_t n, size_t es, int (*cmp) (const void *, const void *))
++{
++	char	   *pa,
++			   *pb,
++			   *pc,
++			   *pd,
++			   *pl,
++			   *pm,
++			   *pn;
++	size_t		d1,
++				d2;
++	int			r,
++				swaptype,
++				presorted;
++
++loop:SWAPINIT(a, es);
++	if (n < 7)
++	{
++		for (pm = (char *) a + es; pm < (char *) a + n * es; pm += es)
++			for (pl = pm; pl > (char *) a && cmp(pl - es, pl) > 0;
++				 pl -= es)
++				swap(pl, pl - es);
++		return;
++	}
++	presorted = 1;
++	for (pm = (char *) a + es; pm < (char *) a + n * es; pm += es)
++	{
++		if (cmp(pm - es, pm) > 0)
++		{
++			presorted = 0;
++			break;
++		}
++	}
++	if (presorted)
++		return;
++	pm = (char *) a + (n / 2) * es;
++	if (n > 7)
++	{
++		pl = (char *) a;
++		pn = (char *) a + (n - 1) * es;
++		if (n > 40)
++		{
++			size_t		d = (n / 8) * es;
++
++			pl = med3(pl, pl + d, pl + 2 * d, cmp);
++			pm = med3(pm - d, pm, pm + d, cmp);
++			pn = med3(pn - 2 * d, pn - d, pn, cmp);
++		}
++		pm = med3(pl, pm, pn, cmp);
++	}
++	swap(a, pm);
++	pa = pb = (char *) a + es;
++	pc = pd = (char *) a + (n - 1) * es;
++	for (;;)
++	{
++		while (pb <= pc && (r = cmp(pb, a)) <= 0)
++		{
++			if (r == 0)
++			{
++				swap(pa, pb);
++				pa += es;
++			}
++			pb += es;
++		}
++		while (pb <= pc && (r = cmp(pc, a)) >= 0)
++		{
++			if (r == 0)
++			{
++				swap(pc, pd);
++				pd -= es;
++			}
++			pc -= es;
++		}
++		if (pb > pc)
++			break;
++		swap(pb, pc);
++		pb += es;
++		pc -= es;
++	}
++	pn = (char *) a + n * es;
++	d1 = Min(pa - (char *) a, pb - pa);
++	vecswap(a, pb - d1, d1);
++	d1 = Min(pd - pc, pn - pd - es);
++	vecswap(pb, pn - d1, d1);
++	d1 = pb - pa;
++	d2 = pd - pc;
++	if (d1 <= d2)
++	{
++		/* Recurse on left partition, then iterate on right partition */
++		if (d1 > es)
++			pg_qsort(a, d1 / es, es, cmp);
++		if (d2 > es)
++		{
++			/* Iterate rather than recurse to save stack space */
++			/* pg_qsort(pn - d2, d2 / es, es, cmp); */
++			a = pn - d2;
++			n = d2 / es;
++			goto loop;
++		}
++	}
++	else
++	{
++		/* Recurse on right partition, then iterate on left partition */
++		if (d2 > es)
++			pg_qsort(pn - d2, d2 / es, es, cmp);
++		if (d1 > es)
++		{
++			/* Iterate rather than recurse to save stack space */
++			/* pg_qsort(a, d1 / es, es, cmp); */
++			n = d1 / es;
++			goto loop;
++		}
++	}
++}
++#endif
+ 
+ /*
+  * qsort comparator wrapper for strcmp.
+diff --git src/port/qsort_arg.c src/port/qsort_arg.c
+index fa7e11a3b8..7e9b8abf54 100644
+--- src/port/qsort_arg.c
++++ src/port/qsort_arg.c
+@@ -1,14 +1,230 @@
+ /*
+  *	qsort_arg.c: qsort with a passthrough "void *" argument
++ *
++ *	Modifications from vanilla NetBSD source:
++ *	  Add do ... while() macro fix
++ *	  Remove __inline, _DIAGASSERTs, __P
++ *	  Remove ill-considered "swap_cnt" switch to insertion sort,
++ *	  in favor of a simple check for presorted input.
++ *	  Take care to recurse on the smaller partition, to bound stack usage.
++ *
++ *	CAUTION: if you change this file, see also qsort.c, gen_qsort_tuple.pl
++ *
++ *	src/port/qsort_arg.c
++ */
++
++/*	$NetBSD: qsort.c,v 1.13 2003/08/07 16:43:42 agc Exp $	*/
++
++/*-
++ * Copyright (c) 1992, 1993
++ *	The Regents of the University of California.  All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ * 1. Redistributions of source code must retain the above copyright
++ *	  notice, this list of conditions and the following disclaimer.
++ * 2. Redistributions in binary form must reproduce the above copyright
++ *	  notice, this list of conditions and the following disclaimer in the
++ *	  documentation and/or other materials provided with the distribution.
++ * 3. Neither the name of the University nor the names of its contributors
++ *	  may be used to endorse or promote products derived from this software
++ *	  without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS'' AND
++ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
++ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
++ * ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
++ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
++ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
++ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
++ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
++ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
++ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
++ * SUCH DAMAGE.
+  */
+ 
+ #include "c.h"
+ 
+-#define ST_SORT qsort_arg
+-#define ST_ELEMENT_TYPE_VOID
+-#define ST_COMPARATOR_TYPE_NAME qsort_arg_comparator
+-#define ST_COMPARE_RUNTIME_POINTER
+-#define ST_COMPARE_ARG_TYPE void
+-#define ST_SCOPE
+-#define ST_DEFINE
+-#include "lib/sort_template.h"
++#ifndef __FreeBSD__
++#warning "using postgres custom qsort_arg function"
++
++static char *med3(char *a, char *b, char *c,
++	 qsort_arg_comparator cmp, void *arg);
++static void swapfunc(char *, char *, size_t, int);
++
++/*
++ * Qsort routine based on J. L. Bentley and M. D. McIlroy,
++ * "Engineering a sort function",
++ * Software--Practice and Experience 23 (1993) 1249-1265.
++ *
++ * We have modified their original by adding a check for already-sorted input,
++ * which seems to be a win per discussions on pgsql-hackers around 2006-03-21.
++ *
++ * Also, we recurse on the smaller partition and iterate on the larger one,
++ * which ensures we cannot recurse more than log(N) levels (since the
++ * partition recursed to is surely no more than half of the input).  Bentley
++ * and McIlroy explicitly rejected doing this on the grounds that it's "not
++ * worth the effort", but we have seen crashes in the field due to stack
++ * overrun, so that judgment seems wrong.
++ */
++
++#define swapcode(TYPE, parmi, parmj, n) \
++do {		\
++	size_t i = (n) / sizeof (TYPE);			\
++	TYPE *pi = (TYPE *)(void *)(parmi);			\
++	TYPE *pj = (TYPE *)(void *)(parmj);			\
++	do {						\
++		TYPE	t = *pi;			\
++		*pi++ = *pj;				\
++		*pj++ = t;				\
++		} while (--i > 0);				\
++} while (0)
++
++#define SWAPINIT(a, es) swaptype = ((char *)(a) - (char *)0) % sizeof(long) || \
++	(es) % sizeof(long) ? 2 : (es) == sizeof(long)? 0 : 1;
++
++static void
++swapfunc(char *a, char *b, size_t n, int swaptype)
++{
++	if (swaptype <= 1)
++		swapcode(long, a, b, n);
++	else
++		swapcode(char, a, b, n);
++}
++
++#define swap(a, b)						\
++	if (swaptype == 0) {					\
++		long t = *(long *)(void *)(a);			\
++		*(long *)(void *)(a) = *(long *)(void *)(b);	\
++		*(long *)(void *)(b) = t;			\
++	} else							\
++		swapfunc(a, b, es, swaptype)
++
++#define vecswap(a, b, n) if ((n) > 0) swapfunc(a, b, n, swaptype)
++
++static char *
++med3(char *a, char *b, char *c, qsort_arg_comparator cmp, void *arg)
++{
++	return cmp(arg, a, b) < 0 ?
++		(cmp(arg, b, c) < 0 ? b : (cmp(arg, a, c) < 0 ? c : a))
++		: (cmp(arg, b, c) > 0 ? b : (cmp(arg, a, c) < 0 ? a : c));
++}
++
++void
++qsort_arg(void *a, size_t n, size_t es, qsort_arg_comparator cmp, void *arg)
++{
++	char	   *pa,
++			   *pb,
++			   *pc,
++			   *pd,
++			   *pl,
++			   *pm,
++			   *pn;
++	size_t		d1,
++				d2;
++	int			r,
++				swaptype,
++				presorted;
++
++loop:SWAPINIT(a, es);
++	if (n < 7)
++	{
++		for (pm = (char *) a + es; pm < (char *) a + n * es; pm += es)
++			for (pl = pm; pl > (char *) a && cmp(arg, pl - es, pl) > 0;
++				 pl -= es)
++				swap(pl, pl - es);
++		return;
++	}
++	presorted = 1;
++	for (pm = (char *) a + es; pm < (char *) a + n * es; pm += es)
++	{
++		if (cmp(arg, pm - es, pm) > 0)
++		{
++			presorted = 0;
++			break;
++		}
++	}
++	if (presorted)
++		return;
++	pm = (char *) a + (n / 2) * es;
++	if (n > 7)
++	{
++		pl = (char *) a;
++		pn = (char *) a + (n - 1) * es;
++		if (n > 40)
++		{
++			size_t		d = (n / 8) * es;
++
++			pl = med3(pl, pl + d, pl + 2 * d, cmp, arg);
++			pm = med3(pm - d, pm, pm + d, cmp, arg);
++			pn = med3(pn - 2 * d, pn - d, pn, cmp, arg);
++		}
++		pm = med3(pl, pm, pn, cmp, arg);
++	}
++	swap(a, pm);
++	pa = pb = (char *) a + es;
++	pc = pd = (char *) a + (n - 1) * es;
++	for (;;)
++	{
++		while (pb <= pc && (r = cmp(arg, pb, a)) <= 0)
++		{
++			if (r == 0)
++			{
++				swap(pa, pb);
++				pa += es;
++			}
++			pb += es;
++		}
++		while (pb <= pc && (r = cmp(arg, pc, a)) >= 0)
++		{
++			if (r == 0)
++			{
++				swap(pc, pd);
++				pd -= es;
++			}
++			pc -= es;
++		}
++		if (pb > pc)
++			break;
++		swap(pb, pc);
++		pb += es;
++		pc -= es;
++	}
++	pn = (char *) a + n * es;
++	d1 = Min(pa - (char *) a, pb - pa);
++	vecswap(a, pb - d1, d1);
++	d1 = Min(pd - pc, pn - pd - es);
++	vecswap(pb, pn - d1, d1);
++	d1 = pb - pa;
++	d2 = pd - pc;
++	if (d1 <= d2)
++	{
++		/* Recurse on left partition, then iterate on right partition */
++		if (d1 > es)
++			qsort_arg(a, d1 / es, es, cmp, arg);
++		if (d2 > es)
++		{
++			/* Iterate rather than recurse to save stack space */
++			/* qsort_arg(pn - d2, d2 / es, es, cmp, arg); */
++			a = pn - d2;
++			n = d2 / es;
++			goto loop;
++		}
++	}
++	else
++	{
++		/* Recurse on right partition, then iterate on left partition */
++		if (d2 > es)
++			qsort_arg(pn - d2, d2 / es, es, cmp, arg);
++		if (d1 > es)
++		{
++			/* Iterate rather than recurse to save stack space */
++			/* qsort_arg(a, d1 / es, es, cmp, arg); */
++			n = d1 / es;
++			goto loop;
++		}
++	}
++}
++
++#endif
+diff --git src/test/regress/expected/insert.out src/test/regress/expected/insert.out
+index dd4354fc7d..f581bb6db2 100644
+--- src/test/regress/expected/insert.out
++++ src/test/regress/expected/insert.out
+@@ -100,7 +100,7 @@ SELECT pg_size_pretty(pg_relation_size('large_tuple_test'::regclass, 'main'));
+ INSERT INTO large_tuple_test (select 3, NULL);
+ -- now this tuple won't fit on the second page, but the insert should
+ -- still succeed by extending the relation
+-INSERT INTO large_tuple_test (select 4, repeat('a', 8126));
++INSERT INTO large_tuple_test (select 4, repeat('a', 8120));
+ DROP TABLE large_tuple_test;
+ --
+ -- check indirection (field/array assignment), cf bug #14265
+diff --git src/test/regress/expected/memoize.out src/test/regress/expected/memoize.out
+index 00438eb1ea..3a712fa0e0 100644
+--- src/test/regress/expected/memoize.out
++++ src/test/regress/expected/memoize.out
+@@ -91,7 +91,7 @@ WHERE t1.unique1 < 1000;
+ (1 row)
+ 
+ -- Reduce work_mem and hash_mem_multiplier so that we see some cache evictions
+-SET work_mem TO '64kB';
++SET work_mem TO '128kB';
+ SET hash_mem_multiplier TO 1.0;
+ SET enable_mergejoin TO off;
+ -- Ensure we get some evictions.  We're unable to validate the hits and misses
+diff --git src/test/regress/expected/tsearch.out src/test/regress/expected/tsearch.out
+index dc03f15499..405636d562 100644
+--- src/test/regress/expected/tsearch.out
++++ src/test/regress/expected/tsearch.out
+@@ -527,10 +527,10 @@ CREATE INDEX wowidx1 ON test_tsvector USING gist (a tsvector_ops(foo=1));
+ ERROR:  unrecognized parameter "foo"
+ CREATE INDEX wowidx1 ON test_tsvector USING gist (a tsvector_ops(siglen=0));
+ ERROR:  value 0 out of bounds for option "siglen"
+-DETAIL:  Valid values are between "1" and "2024".
++DETAIL:  Valid values are between "1" and "2016".
+ CREATE INDEX wowidx1 ON test_tsvector USING gist (a tsvector_ops(siglen=2048));
+ ERROR:  value 2048 out of bounds for option "siglen"
+-DETAIL:  Valid values are between "1" and "2024".
++DETAIL:  Valid values are between "1" and "2016".
+ CREATE INDEX wowidx1 ON test_tsvector USING gist (a tsvector_ops(siglen=100,foo='bar'));
+ ERROR:  unrecognized parameter "foo"
+ CREATE INDEX wowidx1 ON test_tsvector USING gist (a tsvector_ops(siglen=100, siglen = 200));
+diff --git src/test/regress/expected/type_sanity.out src/test/regress/expected/type_sanity.out
+index d3ac08c9ee..dbf5af1b25 100644
+--- src/test/regress/expected/type_sanity.out
++++ src/test/regress/expected/type_sanity.out
+@@ -19,7 +19,7 @@ WHERE t1.typnamespace = 0 OR
+     (t1.typlen <= 0 AND t1.typlen != -1 AND t1.typlen != -2) OR
+     (t1.typtype not in ('b', 'c', 'd', 'e', 'm', 'p', 'r')) OR
+     NOT t1.typisdefined OR
+-    (t1.typalign not in ('c', 's', 'i', 'd')) OR
++    (t1.typalign not in ('c', 's', 'i', 'd', 'p')) OR
+     (t1.typstorage not in ('p', 'x', 'e', 'm'));
+  oid | typname 
+ -----+---------
+@@ -32,7 +32,8 @@ WHERE t1.typbyval AND
+     (t1.typlen != 1 OR t1.typalign != 'c') AND
+     (t1.typlen != 2 OR t1.typalign != 's') AND
+     (t1.typlen != 4 OR t1.typalign != 'i') AND
+-    (t1.typlen != 8 OR t1.typalign != 'd');
++    (t1.typlen != 8 OR t1.typalign != 'd') AND
++    (t1.typlen != 16 OR t1.typalign != 'p');
+  oid | typname 
+ -----+---------
+ (0 rows)
+@@ -449,7 +450,8 @@ WHERE t1.typarray = t2.oid AND NOT (t1.typdelim = t2.typdelim);
+ SELECT t1.oid, t1.typname, t1.typalign, t2.typname, t2.typalign
+ FROM pg_type AS t1, pg_type AS t2
+ WHERE t1.typarray = t2.oid AND
+-    t2.typalign != (CASE WHEN t1.typalign = 'd' THEN 'd'::"char"
++    t2.typalign != (CASE WHEN t1.typalign = 'p' THEN 'p'::"char"
++                         WHEN t1.typalign = 'd' THEN 'd'::"char"
+                          ELSE 'i'::"char" END);
+  oid | typname | typalign | typname | typalign 
+ -----+---------+----------+---------+----------
+diff --git src/test/regress/expected/vacuum.out src/test/regress/expected/vacuum.out
+index c63a157e5f..583a5a91ae 100644
+--- src/test/regress/expected/vacuum.out
++++ src/test/regress/expected/vacuum.out
+@@ -134,7 +134,7 @@ CREATE TABLE no_index_cleanup (i INT PRIMARY KEY, t TEXT);
+ CREATE INDEX no_index_cleanup_idx ON no_index_cleanup(t);
+ ALTER TABLE no_index_cleanup ALTER COLUMN t SET STORAGE EXTERNAL;
+ INSERT INTO no_index_cleanup(i, t) VALUES (generate_series(1,30),
+-    repeat('1234567890',269));
++    repeat('1234567890',266));
+ -- index cleanup option is ignored if VACUUM FULL
+ VACUUM (INDEX_CLEANUP TRUE, FULL TRUE) no_index_cleanup;
+ VACUUM (FULL TRUE) no_index_cleanup;
+@@ -150,7 +150,7 @@ ALTER TABLE no_index_cleanup SET (vacuum_index_cleanup = auto);
+ VACUUM no_index_cleanup;
+ -- Parameter is set for both the parent table and its toast relation.
+ INSERT INTO no_index_cleanup(i, t) VALUES (generate_series(31,60),
+-    repeat('1234567890',269));
++    repeat('1234567890',266));
+ DELETE FROM no_index_cleanup WHERE i < 45;
+ -- Only toast index is cleaned up.
+ ALTER TABLE no_index_cleanup SET (vacuum_index_cleanup = off,
+diff --git src/test/regress/sql/insert.sql src/test/regress/sql/insert.sql
+index bdcffd0314..934c05bd31 100644
+--- src/test/regress/sql/insert.sql
++++ src/test/regress/sql/insert.sql
+@@ -55,7 +55,7 @@ INSERT INTO large_tuple_test (select 3, NULL);
+ 
+ -- now this tuple won't fit on the second page, but the insert should
+ -- still succeed by extending the relation
+-INSERT INTO large_tuple_test (select 4, repeat('a', 8126));
++INSERT INTO large_tuple_test (select 4, repeat('a', 8120));
+ 
+ DROP TABLE large_tuple_test;
+ 
+diff --git src/test/regress/sql/memoize.sql src/test/regress/sql/memoize.sql
+index 0979bcdf76..652ab4d3d4 100644
+--- src/test/regress/sql/memoize.sql
++++ src/test/regress/sql/memoize.sql
+@@ -56,7 +56,7 @@ LATERAL (SELECT t2.unique1 FROM tenk1 t2 WHERE t1.twenty = t2.unique1) t2
+ WHERE t1.unique1 < 1000;
+ 
+ -- Reduce work_mem and hash_mem_multiplier so that we see some cache evictions
+-SET work_mem TO '64kB';
++SET work_mem TO '128kB';
+ SET hash_mem_multiplier TO 1.0;
+ SET enable_mergejoin TO off;
+ -- Ensure we get some evictions.  We're unable to validate the hits and misses
+diff --git src/test/regress/sql/type_sanity.sql src/test/regress/sql/type_sanity.sql
+index 5edc1f1f6e..399783a729 100644
+--- src/test/regress/sql/type_sanity.sql
++++ src/test/regress/sql/type_sanity.sql
+@@ -22,7 +22,7 @@ WHERE t1.typnamespace = 0 OR
+     (t1.typlen <= 0 AND t1.typlen != -1 AND t1.typlen != -2) OR
+     (t1.typtype not in ('b', 'c', 'd', 'e', 'm', 'p', 'r')) OR
+     NOT t1.typisdefined OR
+-    (t1.typalign not in ('c', 's', 'i', 'd')) OR
++    (t1.typalign not in ('c', 's', 'i', 'd', 'p')) OR
+     (t1.typstorage not in ('p', 'x', 'e', 'm'));
+ 
+ -- Look for "pass by value" types that can't be passed by value.
+@@ -33,7 +33,8 @@ WHERE t1.typbyval AND
+     (t1.typlen != 1 OR t1.typalign != 'c') AND
+     (t1.typlen != 2 OR t1.typalign != 's') AND
+     (t1.typlen != 4 OR t1.typalign != 'i') AND
+-    (t1.typlen != 8 OR t1.typalign != 'd');
++    (t1.typlen != 8 OR t1.typalign != 'd') AND
++    (t1.typlen != 16 OR t1.typalign != 'p');
+ 
+ -- Look for "toastable" types that aren't varlena.
+ 
+@@ -321,7 +322,8 @@ WHERE t1.typarray = t2.oid AND NOT (t1.typdelim = t2.typdelim);
+ SELECT t1.oid, t1.typname, t1.typalign, t2.typname, t2.typalign
+ FROM pg_type AS t1, pg_type AS t2
+ WHERE t1.typarray = t2.oid AND
+-    t2.typalign != (CASE WHEN t1.typalign = 'd' THEN 'd'::"char"
++    t2.typalign != (CASE WHEN t1.typalign = 'p' THEN 'p'::"char"
++                         WHEN t1.typalign = 'd' THEN 'd'::"char"
+                          ELSE 'i'::"char" END);
+ 
+ -- Check for typelem set without a handler
+diff --git src/test/regress/sql/vacuum.sql src/test/regress/sql/vacuum.sql
+index 9faa8a34a6..0aec01b88e 100644
+--- src/test/regress/sql/vacuum.sql
++++ src/test/regress/sql/vacuum.sql
+@@ -115,7 +115,7 @@ CREATE TABLE no_index_cleanup (i INT PRIMARY KEY, t TEXT);
+ CREATE INDEX no_index_cleanup_idx ON no_index_cleanup(t);
+ ALTER TABLE no_index_cleanup ALTER COLUMN t SET STORAGE EXTERNAL;
+ INSERT INTO no_index_cleanup(i, t) VALUES (generate_series(1,30),
+-    repeat('1234567890',269));
++    repeat('1234567890',266));
+ -- index cleanup option is ignored if VACUUM FULL
+ VACUUM (INDEX_CLEANUP TRUE, FULL TRUE) no_index_cleanup;
+ VACUUM (FULL TRUE) no_index_cleanup;
+@@ -131,7 +131,7 @@ ALTER TABLE no_index_cleanup SET (vacuum_index_cleanup = auto);
+ VACUUM no_index_cleanup;
+ -- Parameter is set for both the parent table and its toast relation.
+ INSERT INTO no_index_cleanup(i, t) VALUES (generate_series(31,60),
+-    repeat('1234567890',269));
++    repeat('1234567890',266));
+ DELETE FROM no_index_cleanup WHERE i < 45;
+ -- Only toast index is cleaned up.
+ ALTER TABLE no_index_cleanup SET (vacuum_index_cleanup = off,

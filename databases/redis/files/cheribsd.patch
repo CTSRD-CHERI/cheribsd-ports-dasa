@@ -1,0 +1,352 @@
+diff --git deps/hiredis/read.c deps/hiredis/read.c
+index 6c19c5a5e..3d5251552 100644
+--- deps/hiredis/read.c
++++ deps/hiredis/read.c
+@@ -374,7 +374,7 @@ static int processLineItem(redisReader *r) {
+             if (r->fn && r->fn->createString)
+                 obj = r->fn->createString(cur,p,len);
+             else
+-                obj = (void*)(size_t)(cur->type);
++                obj = (void*)(uintptr_t)(cur->type);
+         }
+ 
+         if (obj == NULL) {
+@@ -439,7 +439,7 @@ static int processBulkItem(redisReader *r) {
+                 if (r->fn && r->fn->createString)
+                     obj = r->fn->createString(cur,s+2,len);
+                 else
+-                    obj = (void*)(long)cur->type;
++                    obj = (void*)(intptr_t)cur->type;
+                 success = 1;
+             }
+         }
+@@ -536,7 +536,7 @@ static int processAggregateItem(redisReader *r) {
+             if (r->fn && r->fn->createArray)
+                 obj = r->fn->createArray(cur,elements);
+             else
+-                obj = (void*)(long)cur->type;
++                obj = (void*)(intptr_t)cur->type;
+ 
+             if (obj == NULL) {
+                 __redisReaderSetErrorOOM(r);
+diff --git src/bio.c src/bio.c
+index 9242e51ed..f27a1f3a6 100644
+--- src/bio.c
++++ src/bio.c
+@@ -123,7 +123,7 @@ void bioInit(void) {
+      * function accepts in order to pass the job ID the thread is
+      * responsible of. */
+     for (j = 0; j < BIO_NUM_OPS; j++) {
+-        void *arg = (void*)(unsigned long) j;
++        void *arg = (void*)(uintptr_t) j;
+         if (pthread_create(&thread,&attr,bioProcessBackgroundJobs,arg) != 0) {
+             serverLog(LL_WARNING,"Fatal: Can't initialize Background Jobs.");
+             exit(1);
+diff --git src/config.c src/config.c
+index 115446c67..8fec3ccc5 100644
+--- src/config.c
++++ src/config.c
+@@ -1081,7 +1081,7 @@ void rewriteConfigAddLineNumberToOption(struct rewriteConfigState *state, sds op
+         l = listCreate();
+         dictAdd(state->option_to_line,sdsdup(option),l);
+     }
+-    listAddNodeTail(l,(void*)(long)linenum);
++    listAddNodeTail(l,(void*)(uintptr_t)linenum);
+ }
+ 
+ /* Add the specified option to the set of processed options.
+diff --git src/debug.c src/debug.c
+index 1500eb35b..8cadb05dd 100644
+--- src/debug.c
++++ src/debug.c
+@@ -1907,13 +1907,17 @@ void dumpX86Calls(void *addr, size_t len) {
+     if (len < 5) return;
+     for (j = 0; j < len-4; j++) {
+         if (p[j] != 0xE8) continue; /* Not an E8 CALL opcode. */
+-        unsigned long target = (unsigned long)addr+j+5;
++        uintptr_t target = (uintptr_t)addr+j+5;
+         uint32_t tmp;
+         memcpy(&tmp, p+j+1, sizeof(tmp));
+         target += tmp;
+         if (dladdr((void*)target, &info) != 0 && info.dli_sname != NULL) {
+             if (ht[target&0xff] != target) {
++#if defined(__CHERI_PURE_CAPABILITY__)
++                printf("Function at 0x%Pd is %s\n",target,info.dli_sname);
++#else
+                 printf("Function at 0x%lx is %s\n",target,info.dli_sname);
++#endif
+                 ht[target&0xff] = target;
+             }
+             j += 4; /* Skip the 32 bit immediate. */
+diff --git src/eval.c src/eval.c
+index e2ee41cb5..4454f1231 100644
+--- src/eval.c
++++ src/eval.c
+@@ -803,7 +803,7 @@ int ldbStartSession(client *c) {
+             serverLog(LL_WARNING,"Redis forked for debugging eval");
+         } else {
+             /* Parent */
+-            listAddNodeTail(ldb.children,(void*)(unsigned long)cp);
++            listAddNodeTail(ldb.children,(void*)(uintptr_t)cp);
+             freeClientAsync(c); /* Close the client in the parent side. */
+             return 0;
+         }
+@@ -867,7 +867,7 @@ void ldbEndSession(client *c) {
+  * forked debugging sessions, it is removed from the children list.
+  * If the pid was found non-zero is returned. */
+ int ldbRemoveChild(pid_t pid) {
+-    listNode *ln = listSearchKey(ldb.children,(void*)(unsigned long)pid);
++    listNode *ln = listSearchKey(ldb.children,(void*)(uintptr_t)pid);
+     if (ln) {
+         listDelNode(ldb.children,ln);
+         return 1;
+diff --git src/module.c src/module.c
+index 571eda9c8..06d88e991 100644
+--- src/module.c
++++ src/module.c
+@@ -756,7 +756,7 @@ void moduleFreeContext(RedisModuleCtx *ctx) {
+  * (only the main thread uses propagatePendingCommands) */
+ void moduleCreateContext(RedisModuleCtx *out_ctx, RedisModule *module, int ctx_flags) {
+     memset(out_ctx, 0 ,sizeof(RedisModuleCtx));
+-    out_ctx->getapifuncptr = (void*)(unsigned long)&RM_GetApi;
++    out_ctx->getapifuncptr = (void*)(uintptr_t)&RM_GetApi;
+     out_ctx->module = module;
+     out_ctx->flags = ctx_flags;
+     if (ctx_flags & REDISMODULE_CTX_TEMP_CLIENT)
+@@ -10873,7 +10873,7 @@ int moduleRegisterApi(const char *funcname, void *funcptr) {
+ }
+ 
+ #define REGISTER_API(name) \
+-    moduleRegisterApi("RedisModule_" #name, (void *)(unsigned long)RM_ ## name)
++    moduleRegisterApi("RedisModule_" #name, (void *)(uintptr_t)RM_ ## name)
+ 
+ /* Global initialization at Redis startup. */
+ void moduleRegisterCoreAPI(void);
+@@ -11184,7 +11184,7 @@ int moduleLoad(const char *path, void **module_argv, int module_argc, int is_loa
+         serverLog(LL_WARNING, "Module %s failed to load: %s", path, dlerror());
+         return C_ERR;
+     }
+-    onload = (int (*)(void *, void **, int))(unsigned long) dlsym(handle,"RedisModule_OnLoad");
++    onload = (int (*)(void *, void **, int))(uintptr_t) dlsym(handle,"RedisModule_OnLoad");
+     if (onload == NULL) {
+         dlclose(handle);
+         serverLog(LL_WARNING,
+@@ -11280,7 +11280,7 @@ int moduleUnload(sds name) {
+ 
+     /* Give module a chance to clean up. */
+     int (*onunload)(void *);
+-    onunload = (int (*)(void *))(unsigned long) dlsym(module->handle, "RedisModule_OnUnload");
++    onunload = (int (*)(void *))(uintptr_t) dlsym(module->handle, "RedisModule_OnUnload");
+     if (onunload) {
+         RedisModuleCtx ctx;
+         moduleCreateContext(&ctx, module, REDISMODULE_CTX_TEMP_CLIENT);
+diff --git src/networking.c src/networking.c
+index e8a93dde3..3be0b2e36 100644
+--- src/networking.c
++++ src/networking.c
+@@ -4104,7 +4104,7 @@ void initThreadedIO(void) {
+         pthread_mutex_init(&io_threads_mutex[i],NULL);
+         setIOPendingCount(i, 0);
+         pthread_mutex_lock(&io_threads_mutex[i]); /* Thread will be stopped. */
+-        if (pthread_create(&tid,NULL,IOThreadMain,(void*)(long)i) != 0) {
++        if (pthread_create(&tid,NULL,IOThreadMain,(void*)(intptr_t)i) != 0) {
+             serverLog(LL_WARNING,"Fatal: Can't initialize IO thread.");
+             exit(1);
+         }
+diff --git src/object.c src/object.c
+index 84a9e3afc..322a31bcc 100644
+--- src/object.c
++++ src/object.c
+@@ -164,7 +164,7 @@ robj *createStringObjectFromLongLongWithOptions(long long value, int valueobj) {
+         if (value >= LONG_MIN && value <= LONG_MAX) {
+             o = createObject(OBJ_STRING, NULL);
+             o->encoding = OBJ_ENCODING_INT;
+-            o->ptr = (void*)((long)value);
++            o->ptr = (void*)((intptr_t)value);
+         } else {
+             o = createObject(OBJ_STRING,sdsfromlonglong(value));
+         }
+@@ -642,7 +642,7 @@ robj *tryObjectEncoding(robj *o) {
+             if (o->encoding == OBJ_ENCODING_RAW) {
+                 sdsfree(o->ptr);
+                 o->encoding = OBJ_ENCODING_INT;
+-                o->ptr = (void*) value;
++                o->ptr = (void*)(intptr_t) value;
+                 return o;
+             } else if (o->encoding == OBJ_ENCODING_EMBSTR) {
+                 decrRefCount(o);
+diff --git src/pqsort.c src/pqsort.c
+index fab54e026..e7c8c5fa7 100644
+--- src/pqsort.c
++++ src/pqsort.c
+@@ -41,6 +41,10 @@
+ #include <stdint.h>
+ #include <errno.h>
+ #include <stdlib.h>
++#if defined(__CHERI_PURE_CAPABILITY__)
++#include <stdalign.h>
++#include <stddef.h>
++#endif
+ 
+ static inline char	*med3 (char *, char *, char *,
+     int (*)(const void *, const void *));
+@@ -62,19 +66,44 @@ static inline void	 swapfunc (char *, char *, size_t, int);
+         } while (--i > 0);				\
+ }
+ 
++#if defined(__CHERI_PURE_CAPABILITY__)
++#define SWAPINIT(a, es) 					\
++	if (!__builtin_is_aligned(a, alignof(max_align_t))) {   \
++		swaptype = 2;                           	\
++	} else if (es % sizeof(uintptr_t) != 0) { 		\
++		swaptype = 2;					\
++	} else {						\
++		if (es == sizeof(uintptr_t)) {			\
++			swaptype = 0;				\
++		} else {					\
++			swaptype = 1;				\
++		}						\
++	}
++#else
+ #define SWAPINIT(a, es) swaptype = (uintptr_t)a % sizeof(long) || \
+ 	es % sizeof(long) ? 2 : es == sizeof(long)? 0 : 1;
++#endif
+ 
+ static inline void
+ swapfunc(char *a, char *b, size_t n, int swaptype)
+ {
+ 
+ 	if (swaptype <= 1)
+-		swapcode(long, a, b, n)
++		swapcode(uintptr_t, a, b, n)
+ 	else
+ 		swapcode(char, a, b, n)
+ }
+ 
++#if defined(__CHERI_PURE_CAPABILITY__)
++#define swap(a, b)							\
++	if (swaptype == 0) {						\
++		uintptr_t t = *(uintptr_t *)(void *)(a);		\
++		*(uintptr_t *)(void *)(a) = *(uintptr_t*)(void *)(b);	\
++		*(uintptr_t *)(void *)(b) = t;				\
++	} else								\
++		swapfunc(a, b, es, swaptype)
++
++#else
+ #define swap(a, b)						\
+ 	if (swaptype == 0) {					\
+ 		long t = *(long *)(void *)(a);			\
+@@ -82,6 +111,7 @@ swapfunc(char *a, char *b, size_t n, int swaptype)
+ 		*(long *)(void *)(b) = t;			\
+ 	} else							\
+ 		swapfunc(a, b, es, swaptype)
++#endif
+ 
+ #define vecswap(a, b, n) if ((n) > 0) swapfunc((a), (b), (size_t)(n), swaptype)
+ 
+diff --git src/redismodule.h src/redismodule.h
+index f1019fc2c..ac1ab8a39 100644
+--- src/redismodule.h
++++ src/redismodule.h
+@@ -1210,7 +1210,7 @@ REDISMODULE_API int (*RedisModule_LoadConfigs)(RedisModuleCtx *ctx) REDISMODULE_
+ static int RedisModule_Init(RedisModuleCtx *ctx, const char *name, int ver, int apiver) REDISMODULE_ATTR_UNUSED;
+ static int RedisModule_Init(RedisModuleCtx *ctx, const char *name, int ver, int apiver) {
+     void *getapifuncptr = ((void**)ctx)[0];
+-    RedisModule_GetApi = (int (*)(const char *, void *)) (unsigned long)getapifuncptr;
++    RedisModule_GetApi = (int (*)(const char *, void *)) (uintptr_t)getapifuncptr;
+     REDISMODULE_GET_API(Alloc);
+     REDISMODULE_GET_API(TryAlloc);
+     REDISMODULE_GET_API(Calloc);
+diff --git src/server.c src/server.c
+index b0cef8870..5ac9354ed 100644
+--- src/server.c
++++ src/server.c
+@@ -1821,7 +1821,7 @@ void createSharedObjects(void) {
+ 
+     for (j = 0; j < OBJ_SHARED_INTEGERS; j++) {
+         shared.integers[j] =
+-            makeObjectShared(createObject(OBJ_STRING,(void*)(long)j));
++            makeObjectShared(createObject(OBJ_STRING,(void*)(intptr_t)j));
+         shared.integers[j]->encoding = OBJ_ENCODING_INT;
+     }
+     for (j = 0; j < OBJ_SHARED_BULKHDR_LEN; j++) {
+diff --git src/t_string.c src/t_string.c
+index 7b67b78ce..8bec70ce3 100644
+--- src/t_string.c
++++ src/t_string.c
+@@ -610,7 +610,7 @@ void incrDecrCommand(client *c, long long incr) {
+         value >= LONG_MIN && value <= LONG_MAX)
+     {
+         new = o;
+-        o->ptr = (void*)((long)value);
++        o->ptr = (void*)((intptr_t)value);
+     } else {
+         new = createStringObjectFromLongLongForValue(value);
+         if (o) {
+diff --git src/timeout.c src/timeout.c
+index 36cea7c26..6bc2359cc 100644
+--- src/timeout.c
++++ src/timeout.c
+@@ -90,7 +90,12 @@ int clientsCronHandleTimeout(client *c, mstime_t now_ms) {
+  * the tree. In beforeSleep() we call handleBlockedClientsTimeout() to run
+  * the tree and unblock the clients. */
+ 
++#if defined(__CHERI_PURE_CAPABILITY__)
++/* 8 bytes mstime + sizeof(void *) bytes client ID aligned to alignof(max_align_t). */
++#define CLIENT_ST_KEYLEN 32
++#else
+ #define CLIENT_ST_KEYLEN 16    /* 8 bytes mstime + 8 bytes client ID. */
++#endif
+ 
+ /* Given client ID and timeout, write the resulting radix tree key in buf. */
+ void encodeTimeoutKey(unsigned char *buf, uint64_t timeout, client *c) {
+@@ -116,7 +121,11 @@ void addClientToTimeoutTable(client *c) {
+     uint64_t timeout = c->bpop.timeout;
+     unsigned char buf[CLIENT_ST_KEYLEN];
+     encodeTimeoutKey(buf,timeout,c);
++#if defined(__CHERI_PURE_CAPABILITY__)
++    if (raxTryInsert(server.clients_timeout_table,buf,sizeof(buf),c,NULL))
++#else
+     if (raxTryInsert(server.clients_timeout_table,buf,sizeof(buf),NULL,NULL))
++#endif
+         c->flags |= CLIENT_IN_TO_TABLE;
+ }
+ 
+@@ -144,6 +153,9 @@ void handleBlockedClientsTimeout(void) {
+         uint64_t timeout;
+         client *c;
+         decodeTimeoutKey(ri.key,&timeout,&c);
++#if defined(__CHERI_PURE_CAPABILITY__)
++	c = (client *) ri.data;
++#endif
+         if (timeout >= now) break; /* All the timeouts are in the future. */
+         c->flags &= ~CLIENT_IN_TO_TABLE;
+         checkBlockedClientTimeout(c,now);
+diff --git src/tracking.c src/tracking.c
+index c4b534a62..f20074483 100644
+--- src/tracking.c
++++ src/tracking.c
+@@ -162,7 +162,11 @@ void enableBcastTrackingForPrefix(client *c, char *prefix, size_t plen) {
+         bs->clients = raxNew();
+         raxInsert(PrefixTable,(unsigned char*)prefix,plen,bs,NULL);
+     }
++#if defined(__CHERI_PURE_CAPABILITY__)
++    if (raxTryInsert(bs->clients,(unsigned char*)&c,sizeof(c),c,NULL)) {
++#else
+     if (raxTryInsert(bs->clients,(unsigned char*)&c,sizeof(c),NULL,NULL)) {
++#endif
+         if (c->client_tracking_prefixes == NULL)
+             c->client_tracking_prefixes = raxNew();
+         raxInsert(c->client_tracking_prefixes,
+@@ -605,7 +609,11 @@ void trackingBroadcastInvalidationMessages(void) {
+             raxSeek(&ri2,"^",NULL,0);
+             while(raxNext(&ri2)) {
+                 client *c;
++#if defined(__CHERI_PURE_CAPABILITY__)
++		c = (client *) ri2.data;
++#else
+                 memcpy(&c,ri2.key,sizeof(c));
++#endif
+                 if (c->flags & CLIENT_TRACKING_NOLOOP) {
+                     /* This client may have certain keys excluded. */
+                     sds adhoc = trackingBuildBroadcastReply(c,bs->keys);

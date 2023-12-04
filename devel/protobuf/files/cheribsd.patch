@@ -437,6 +437,30 @@ index 0c31517f0..33811432e 100644
        ptr_ = reinterpret_cast<intptr_t>(a) | message_owned_arena_tag;
        return a;
      } else {
+diff --git src/google/protobuf/repeated_field.h src/google/protobuf/repeated_field.h
+index 3fb734e5c..aac145990 100644
+--- src/google/protobuf/repeated_field.h
++++ src/google/protobuf/repeated_field.h
+@@ -140,12 +140,19 @@ PROTO_MEMSWAP_DEF_SIZE(uint8_t, 2)
+ PROTO_MEMSWAP_DEF_SIZE(uint16_t, 4)
+ PROTO_MEMSWAP_DEF_SIZE(uint32_t, 8)
+ 
++#ifdef __CHERI_PURE_CAPABILITY__
++#if __SIZEOF_UINTCAP__ == 16
++PROTO_MEMSWAP_DEF_SIZE(uint64_t, 16)
++#endif
++PROTO_MEMSWAP_DEF_SIZE(__uintcap_t, (1u << 31))
++#else /* !__CHERI_PURE_CAPABILITY__ */
+ #ifdef __SIZEOF_INT128__
+ PROTO_MEMSWAP_DEF_SIZE(uint64_t, 16)
+ PROTO_MEMSWAP_DEF_SIZE(__uint128_t, (1u << 31))
+ #else
+ PROTO_MEMSWAP_DEF_SIZE(uint64_t, (1u << 31))
+ #endif
++#endif /* !__CHERI_PURE_CAPABILITY__ */
+ 
+ #undef PROTO_MEMSWAP_DEF_SIZE
+ 
 diff --git src/google/protobuf/repeated_field_unittest.cc src/google/protobuf/repeated_field_unittest.cc
 index d8a82bf09..49e166e91 100644
 --- src/google/protobuf/repeated_field_unittest.cc

@@ -43,8 +43,8 @@ USE_CSTD=	c11
 USE_CXXSTD=	c++17
 USE_LDCONFIG=	yes
 
-# PLIST_SUB=	SHLIB_MAJOR=${PORTVERSION:R} \
-# 		SHLIB_MINOR=${PORTVERSION:E}
+PLIST_SUB=	SHLIB_MAJOR=${PORTVERSION:R} \
+		SHLIB_MINOR=${PORTVERSION:E}
 
 CONFLICTS_INSTALL=	grpc-qps[0-9][0-9][0-9]
 
@@ -80,21 +80,33 @@ post-build:
 QPSBIN=${STAGEDIR}${PREFIX}/bin
 QPSPY=${STAGEDIR}${PREFIX}/libexec/${PORTNAME}/tools/run_tests
 QPSSHARE=${STAGEDIR}${PREFIX}/share/${PORTNAME}
-GRPC_CORE_SOVERSION=31
+GRPC_CORE_SOVERSION=31.0.0
 do-install:
 	${MKDIR} -p ${QPSBIN}
+
 	${INSTALL_PROGRAM} ${BUILD_WRKSRC}/qps_worker ${QPSBIN}/grpc_qps_worker
 	${INSTALL_PROGRAM} ${BUILD_WRKSRC}/qps_json_driver ${QPSBIN}/grpc_qps_json_driver
 	${INSTALL_SCRIPT} ${.CURDIR}/files/qps_port_server.sh ${QPSBIN}/grpc_qps_port_server
+
 	${INSTALL_LIB} ${BUILD_WRKSRC}/libgrpc++_test_config.so.${PORTVERSION} ${STAGEDIR}${PREFIX}/lib
+	${LN} -f -s libgrpc++_test_config.so.${PORTVERSION} ${STAGEDIR}${PREFIX}/lib/libgrpc++_test_config.so.${PORTVERSION:R}
+	${LN} -f -s libgrpc++_test_config.so.${PORTVERSION} ${STAGEDIR}${PREFIX}/lib/libgrpc++_test_config.so
+
 	${INSTALL_LIB} ${BUILD_WRKSRC}/libgrpc++_test_util.so.${PORTVERSION} ${STAGEDIR}${PREFIX}/lib
+	${LN} -f -s libgrpc++_test_util.so.${PORTVERSION} ${STAGEDIR}${PREFIX}/lib/libgrpc++_test_util.so.${PORTVERSION:R}
+	${LN} -f -s libgrpc++_test_util.so.${PORTVERSION} ${STAGEDIR}${PREFIX}/lib/libgrpc++_test_util.so
+
 	${INSTALL_LIB} ${BUILD_WRKSRC}/libgrpc_test_util.so.${GRPC_CORE_SOVERSION} ${STAGEDIR}${PREFIX}/lib
+	${LN} -f -s libgrpc_test_util.so.${GRPC_CORE_SOVERSION} ${STAGEDIR}${PREFIX}/lib/libgrpc_test_util.so.31
+	${LN} -f -s libgrpc_test_util.so.${GRPC_CORE_SOVERSION} ${STAGEDIR}${PREFIX}/lib/libgrpc_test_util.so
+
 	${MKDIR} -p ${QPSPY}
 	${MKDIR} -p ${QPSPY}/python_utils
 	${INSTALL_SCRIPT} ${WRKSRC}/tools/run_tests/start_port_server.py ${QPSPY}
 	${INSTALL_SCRIPT} ${WRKSRC}/tools/run_tests/python_utils/port_server.py ${QPSPY}/python_utils
 	${INSTALL_SCRIPT} ${WRKSRC}/tools/run_tests/python_utils/start_port_server.py ${QPSPY}/python_utils
 	${INSTALL_SCRIPT} ${WRKSRC}/tools/run_tests/python_utils/jobset.py ${QPSPY}/python_utils
+
 	${MKDIR} -p ${QPSSHARE}/scenarios
 	cd ${BUILD_WRKSRC}/qps_scenarios && ${COPYTREE_SHARE} . ${QPSSHARE}/scenarios
 

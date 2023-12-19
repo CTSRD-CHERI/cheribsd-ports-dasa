@@ -1,18 +1,187 @@
-diff --git auto/os/conf auto/os/conf
-index 7c6cb691..d7f6e038 100644
---- auto/os/conf
-+++ auto/os/conf
-@@ -110,7 +110,7 @@ case "$NGX_MACHINE" in
-         NGX_MACH_CACHE_LINE=64
-     ;;
- 
--    aarch64 )
-+    aarch64 | arm64)
-         have=NGX_ALIGNMENT value=16 . auto/define
-         NGX_MACH_CACHE_LINE=64
-     ;;
+diff --git README-morello.md README-morello.md
+new file mode 100644
+index 000000000..4ea5f5d4f
+--- /dev/null
++++ README-morello.md
+@@ -0,0 +1,176 @@
++# Background
++
++This software is an experimental Morello port of nginx v1.22.0.
++
++## Build instructions
++
++nginx is build with GNU make (gmake), first install this build dependency
++as follows:
++
++`$ sudo pkg64 install gmake`
++
++Once installed nginx can be built as follows
++(see `auto/configure --help` for a complete list of options):
++ 
++```
++$ auto/configure
++	--with-cc-opt='-Wno-cheri-provenance'
++	--without-http_geo_module
++	--with-http_ssl_module
++	--with-pcre
++	--with-compat
++$ gmake
++$ sudo gmake install
++```
++
++## Run instructions
++
++Once installed nginx can be started by specifying a configuration file as:
++ 
++`sudo /usr/local/sbin/nginx -c <conf>`
++
++To stop the server:
++
++`sudo /usr/local/nginx/sbin/nginx -s stop`
++
++Further details ons starting and stopping nginx and writting a configuration
++file can be found,
++[Starting, Stopping, and Restarting NGINX](https://www.nginx.com/resources/wiki/start/topics/tutorials/commandline/) and
++[Creating NGINX Plus and NGINX Configuration Files](https://docs.nginx.com/nginx/admin-guide/basic-functionality/managing-configuration-files/).
++
++## Library compartmentalization
++
++When using Library compartmentalisation nginx must be build with the 
++following flags: `-Xclang -morello-bounded-memargs=caller-only`.
++
++Following the instructions given by in `man c18n` the runtime linker can either
++be changed to support library compartmentalisation when running configure:
++
++`$ auto/configure --with-ld-opt="-Wl,--dynamic-linker=/libexec/ld-elf-c18n.so.1"` 
++
++or can be changed after the nginx binary has been created using patchelf:
++
++```
++$ sudo patchelf --set-interpreter /libexec/ld-elf-c18n.so.1  /usr/local/sbin/nginx
++```
++
++The change of runtime linker can be verified with either readelf or patchelf
++as below:
++
++```
++$ readelf -l /usr/local/nginx/sbin/nginx
++
++Elf file type is DYN (Shared object file)
++Entry point 0x6ae01
++There are 11 program headers, starting at offset 64
++
++Program Headers:
++  Type           Offset             VirtAddr           PhysAddr
++                 FileSiz            MemSiz              Flg    Align
++  PHDR           0x0000000000000040 0x0000000000000040 0x0000000000000040
++                 0x0000000000000268 0x0000000000000268  R      0x8
++  INTERP         0x0000000000000400 0x0000000000000400 0x0000000000000400
++                 0x0000000000000015 0x0000000000000015  R      0x1
++      [Requesting program interpreter: /libexec/ld-elf.so.1]
++...
++
++$ patchelf --print-interpreter /usr/local/sbin/nginx
++/libexec/ld-elf-c18n.so.1
++```
++
++To start nginx the modifed runtime linker must be able to locate the following
++library: `libpcre.so.1`. This can be achieved by specifying the environmental
++variable `LD_C18N_LIBRARY_PATH` as follows:
++
++`$ sudo LD_C18N_LIBRARY_PATH=/usr/local/lib /usr/local/nginx/sbin/nginx -c ...`
++
++nginx should then start running with shared libraries within seperate
++compartmentments (manged and enforced by the updated runtime linker).
++
++## Testing
++
++### Unit testing
++
++Unit testing has been performed using a corpus of Perl scripts
++[nginx-tests](http://hg.nginx.org/nginx-tests). The core HTTP function can be
++tested as (this require installation of Perl to provide the `prove` command
++line utility):
++
++```
++TEST_NGINX_BINARY=/usr/local/nginx/sbin/nginx prove http*
++http_absolute_redirect.t .... ok
++http_disable_symlinks.t ..... skipped: no disable_symlinks
++http_error_page.t ........... ok
++http_expect_100_continue.t .. ok
++http_header_buffers.t ....... ok
++http_headers_multi.t ........ ok
++http_host.t ................. ok
++http_include.t .............. ok
++http_keepalive.t ............ ok
++http_keepalive_shutdown.t ... ok
++http_listen.t ............... ok
++http_listen_wildcard.t ...... skipped: listen on wildcard address
++http_location.t ............. ok
++http_location_auto.t ........ ok
++http_location_win32.t ....... skipped: not win32
++http_method.t ............... ok
++http_resolver.t ............. ok
++http_resolver_aaaa.t ........ ok
++http_resolver_cleanup.t ..... ok
++http_resolver_cname.t ....... ok
++http_resolver_ipv4.t ........ skipped: no resolver ipv4
++http_server_name.t .......... ok
++http_try_files.t ............ ok
++http_uri.t .................. ok
++http_variables.t ............ ok
++All tests successful.
++Files=25, Tests=402, 67 wallclock secs ( 0.20 usr  0.05 sys +  4.80 cusr  1.07 csys =  6.11 CPU)
++Result: PASS
++```
++
++NOTE: That the `http_header_buffers.t` script requires increasing the
++connection pool size to 224.
++
++To run the unit tests with the runtime linker for library compartmentalisation
++include the `LD_C18N_LIBRARY_PATH` environmental variable:
++
++`LD_C18N_LIBRARY_PATH=/usr/local/lib TEST_NGINX_BINARY=/usr/local/nginx/sbin/nginx prove http*`
++
++### Performance testing
++
++Performance testing is performed using the `wrk` benchmark, as described
++in [Testing the Performance of NGINX and NGINX Plus Web Servers](https://www.nginx.com/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers/).
++
++`./wrk -t 1 -c 50 -d 15s --latency https://192.168.2.2/1kb.bin`
++
++## Notes and Limitations
++
++As which many configure scripts, `-Werror` is enabled. This results in many
++ambiguous provenance warnings which (in theses cases) bening being promoted
++to errors. As in this case the warnings are benign instead of making
++disruptive and disruptive changes to the code the configure should be
++passed the `--with-cc-opt='-Wno-cheri-provenenace` flags.
++
++The `http_geo_module` performs a cast of a pointer difference to a pointer.
++This results in a capability misuse as the resulting pointer can't be
++dereferenced. 
++
++Adaptations to nginx to the memory-safe CheriABI have been driven by:
++compiler warnings and errors, and dynamic testing. Where the compiler
++emits a warning or error we are able to rigorously review this and
++correct. However, some issues only manifest dynamically (at runtime),
++such as invalidation of capabilities by pointer arithmetic,
++non-blessed memory copies, or insufficient pointer alignment.
++Enhancements such as CHERI UBsan have modestly improved the ability to
++identify problems previously only found during dynamic testing. However,
++ we are still greatly reliant on dynamic testing. This testing is
++constrained by both the completeness of the test suites (which in some
++cases provide poor coverage) and the time available within the project
++to perform testing. Whilst it is know that errors remain outside the
++core http module we are not able to estimate what problems might
++remain beyond those resolved in the scope of the project.
++
++## Acknowledgement
++
++This work has been undertaken within DSTL contract
++ACC6036483: CHERI-based compartmentalisation for web services on Morello.
 diff --git auto/types/sizeof auto/types/sizeof
-index 480d8cfa..5ee68952 100644
+index 480d8cfa4..5ee689520 100644
 --- auto/types/sizeof
 +++ auto/types/sizeof
 @@ -56,6 +56,11 @@ case $ngx_size in
@@ -28,7 +197,7 @@ index 480d8cfa..5ee68952 100644
          echo
          echo "$0: error: can not detect $ngx_type size"
 diff --git conf/nginx.conf conf/nginx.conf
-index 29bc085f..0c867852 100644
+index 29bc085f2..0c8678521 100644
 --- conf/nginx.conf
 +++ conf/nginx.conf
 @@ -32,6 +32,9 @@ http {
@@ -42,7 +211,7 @@ index 29bc085f..0c867852 100644
          listen       80;
          server_name  localhost;
 diff --git src/core/ngx_array.c src/core/ngx_array.c
-index 4ea226f0..dae4b869 100644
+index 4ea226f06..dae4b8696 100644
 --- src/core/ngx_array.c
 +++ src/core/ngx_array.c
 @@ -59,6 +59,18 @@ ngx_array_push(ngx_array_t *a)
@@ -73,7 +242,7 @@ index 4ea226f0..dae4b869 100644
  
      elt = (u_char *) a->elts + a->size * a->nelts;
 diff --git src/core/ngx_config.h src/core/ngx_config.h
-index 1861be60..dab593c2 100644
+index 1861be601..dab593c20 100644
 --- src/core/ngx_config.h
 +++ src/core/ngx_config.h
 @@ -43,6 +43,10 @@
@@ -129,7 +298,7 @@ index 1861be60..dab593c2 100644
  
  #endif /* _NGX_CONFIG_H_INCLUDED_ */
 diff --git src/core/ngx_crc32.c src/core/ngx_crc32.c
-index a5b4017b..ff66ffdf 100644
+index a5b4017b8..ff66ffdf9 100644
 --- src/core/ngx_crc32.c
 +++ src/core/ngx_crc32.c
 @@ -107,9 +107,7 @@ ngx_crc32_table_init(void)
@@ -144,7 +313,7 @@ index a5b4017b..ff66ffdf 100644
          return NGX_OK;
      }
 diff --git src/core/ngx_hash.c src/core/ngx_hash.c
-index 8215c271..4ba10df4 100644
+index 8215c2717..4ba10df41 100644
 --- src/core/ngx_hash.c
 +++ src/core/ngx_hash.c
 @@ -97,23 +97,21 @@ ngx_hash_find_wc_head(ngx_hash_wildcard_t *hwc, u_char *name, size_t len)
@@ -208,7 +377,7 @@ index 8215c271..4ba10df4 100644
              value = ngx_hash_find_wc_tail(hwc, &name[i], len - i);
  
 diff --git src/core/ngx_palloc.c src/core/ngx_palloc.c
-index d3044ac9..4b9578f3 100644
+index d3044ac9c..4b9578f3b 100644
 --- src/core/ngx_palloc.c
 +++ src/core/ngx_palloc.c
 @@ -20,6 +20,12 @@ ngx_create_pool(size_t size, ngx_log_t *log)
@@ -252,7 +421,7 @@ index d3044ac9..4b9578f3 100644
  }
  
 diff --git src/core/ngx_palloc.h src/core/ngx_palloc.h
-index 376e0128..e9403076 100644
+index 376e01283..e9403076b 100644
 --- src/core/ngx_palloc.h
 +++ src/core/ngx_palloc.h
 @@ -76,10 +76,10 @@ ngx_pool_t *ngx_create_pool(size_t size, ngx_log_t *log);
@@ -271,7 +440,7 @@ index 376e0128..e9403076 100644
  
  
 diff --git src/core/ngx_slab.c src/core/ngx_slab.c
-index b8577ce7..5836a67b 100644
+index b8577ce75..5836a67b0 100644
 --- src/core/ngx_slab.c
 +++ src/core/ngx_slab.c
 @@ -44,10 +44,10 @@
@@ -426,7 +595,7 @@ index b8577ce7..5836a67b 100644
          }
  
 diff --git src/core/ngx_slab.h src/core/ngx_slab.h
-index d1876bbe..21114c4a 100644
+index d1876bbec..1886c126b 100644
 --- src/core/ngx_slab.h
 +++ src/core/ngx_slab.h
 @@ -16,7 +16,7 @@
@@ -434,12 +603,12 @@ index d1876bbe..21114c4a 100644
  
  struct ngx_slab_page_s {
 -    uintptr_t         slab;
-+    vaddr_t           slab;
++    ptraddr_t         slab;
      ngx_slab_page_t  *next;
      uintptr_t         prev;
  };
 diff --git src/event/modules/ngx_kqueue_module.c src/event/modules/ngx_kqueue_module.c
-index 9c7244c4..c139864a 100644
+index 9c7244c45..c139864ab 100644
 --- src/event/modules/ngx_kqueue_module.c
 +++ src/event/modules/ngx_kqueue_module.c
 @@ -345,8 +345,8 @@ ngx_kqueue_del_event(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags)
@@ -474,7 +643,7 @@ index 9c7244c4..c139864a 100644
              if (ev->closed || ev->instance != instance) {
  
 diff --git src/http/modules/ngx_http_log_module.c src/http/modules/ngx_http_log_module.c
-index f7c4bd2f..82717775 100644
+index f7c4bd2f5..82717775e 100644
 --- src/http/modules/ngx_http_log_module.c
 +++ src/http/modules/ngx_http_log_module.c
 @@ -773,11 +773,11 @@ static u_char *
@@ -502,7 +671,7 @@ index f7c4bd2f..82717775 100644
                      op->data = 0;
  
 diff --git src/http/modules/ngx_http_upstream_hash_module.c src/http/modules/ngx_http_upstream_hash_module.c
-index e741eb23..141a9bae 100644
+index e741eb237..141a9bae5 100644
 --- src/http/modules/ngx_http_upstream_hash_module.c
 +++ src/http/modules/ngx_http_upstream_hash_module.c
 @@ -169,7 +169,7 @@ ngx_http_upstream_get_hash_peer(ngx_peer_connection_t *pc, void *data)
@@ -551,7 +720,7 @@ index e741eb23..141a9bae 100644
      hp->rrp.tried[n] |= m;
  
 diff --git src/http/modules/ngx_http_upstream_ip_hash_module.c src/http/modules/ngx_http_upstream_ip_hash_module.c
-index 1fa01d95..996f543f 100644
+index 1fa01d95a..996f543fd 100644
 --- src/http/modules/ngx_http_upstream_ip_hash_module.c
 +++ src/http/modules/ngx_http_upstream_ip_hash_module.c
 @@ -152,7 +152,7 @@ ngx_http_upstream_get_ip_hash_peer(ngx_peer_connection_t *pc, void *data)
@@ -573,7 +742,7 @@ index 1fa01d95..996f543f 100644
          if (iphp->rrp.tried[n] & m) {
              goto next;
 diff --git src/http/modules/ngx_http_upstream_least_conn_module.c src/http/modules/ngx_http_upstream_least_conn_module.c
-index ebe06276..82dcc492 100644
+index ebe06276d..82dcc492f 100644
 --- src/http/modules/ngx_http_upstream_least_conn_module.c
 +++ src/http/modules/ngx_http_upstream_least_conn_module.c
 @@ -102,7 +102,7 @@ ngx_http_upstream_get_least_conn_peer(ngx_peer_connection_t *pc, void *data)
@@ -612,8 +781,30 @@ index ebe06276..82dcc492 100644
  
      rrp->tried[n] |= m;
  
+diff --git src/http/ngx_http_core_module.c src/http/ngx_http_core_module.c
+index 2140e0627..3a12045e5 100644
+--- src/http/ngx_http_core_module.c
++++ src/http/ngx_http_core_module.c
+@@ -3419,7 +3419,7 @@ ngx_http_core_init_main_conf(ngx_conf_t *cf, void *conf)
+ 
+ 
+     ngx_conf_init_uint_value(cmcf->variables_hash_max_size, 1024);
+-    ngx_conf_init_uint_value(cmcf->variables_hash_bucket_size, 64);
++    ngx_conf_init_uint_value(cmcf->variables_hash_bucket_size, 128);
+ 
+     cmcf->variables_hash_bucket_size =
+                ngx_align(cmcf->variables_hash_bucket_size, ngx_cacheline_size);
+@@ -3698,7 +3698,7 @@ ngx_http_core_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
+                               prev->types_hash_max_size, 1024);
+ 
+     ngx_conf_merge_uint_value(conf->types_hash_bucket_size,
+-                              prev->types_hash_bucket_size, 64);
++                              prev->types_hash_bucket_size, 128);
+ 
+     conf->types_hash_bucket_size = ngx_align(conf->types_hash_bucket_size,
+                                              ngx_cacheline_size);
 diff --git src/http/ngx_http_huff_encode.c src/http/ngx_http_huff_encode.c
-index c03b153d..88e0d16f 100644
+index c03b153da..88e0d16f1 100644
 --- src/http/ngx_http_huff_encode.c
 +++ src/http/ngx_http_huff_encode.c
 @@ -156,7 +156,7 @@ static ngx_http_huff_encode_code_t  ngx_http_huff_encode_table_lc[256] =
@@ -626,7 +817,7 @@ index c03b153d..88e0d16f 100644
  #if (NGX_HAVE_LITTLE_ENDIAN)
  
 diff --git src/http/ngx_http_script.c src/http/ngx_http_script.c
-index bebdbd92..23bc0fab 100644
+index a2b9f1b7b..9c10408c0 100644
 --- src/http/ngx_http_script.c
 +++ src/http/ngx_http_script.c
 @@ -878,7 +878,7 @@ ngx_http_script_copy_code(ngx_http_script_engine_t *e)
@@ -639,7 +830,7 @@ index bebdbd92..23bc0fab 100644
      ngx_log_debug2(NGX_LOG_DEBUG_HTTP, e->request->connection->log, 0,
                     "http script copy: \"%*s\"", e->pos - p, p);
 diff --git src/http/ngx_http_upstream_round_robin.c src/http/ngx_http_upstream_round_robin.c
-index 1f15fae5..1a67442b 100644
+index 1f15fae50..1a67442b7 100644
 --- src/http/ngx_http_upstream_round_robin.c
 +++ src/http/ngx_http_upstream_round_robin.c
 @@ -282,7 +282,8 @@ ngx_http_upstream_init_round_robin_peer(ngx_http_request_t *r,
@@ -690,7 +881,7 @@ index 1f15fae5..1a67442b 100644
      rrp->tried[n] |= m;
  
 diff --git src/http/ngx_http_upstream_round_robin.h src/http/ngx_http_upstream_round_robin.h
-index 922ceaa0..05be35e1 100644
+index 922ceaa04..05be35e1b 100644
 --- src/http/ngx_http_upstream_round_robin.h
 +++ src/http/ngx_http_upstream_round_robin.h
 @@ -129,7 +129,7 @@ typedef struct {
@@ -703,7 +894,7 @@ index 922ceaa0..05be35e1 100644
  } ngx_http_upstream_rr_peer_data_t;
  
 diff --git src/os/unix/ngx_alloc.c src/os/unix/ngx_alloc.c
-index 5c2f7870..c5848e57 100644
+index 5c2f78702..c5848e570 100644
 --- src/os/unix/ngx_alloc.c
 +++ src/os/unix/ngx_alloc.c
 @@ -69,6 +69,9 @@ ngx_memalign(size_t alignment, size_t size, ngx_log_t *log)
@@ -717,7 +908,7 @@ index 5c2f7870..c5848e57 100644
  void *
  ngx_memalign(size_t alignment, size_t size, ngx_log_t *log)
 diff --git src/os/unix/ngx_alloc.h src/os/unix/ngx_alloc.h
-index 655db257..e38599e0 100644
+index 655db257f..e38599e03 100644
 --- src/os/unix/ngx_alloc.h
 +++ src/os/unix/ngx_alloc.h
 @@ -13,8 +13,8 @@

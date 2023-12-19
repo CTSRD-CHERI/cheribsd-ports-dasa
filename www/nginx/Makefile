@@ -24,6 +24,11 @@ CPE_VENDOR=	f5
 CPE_PRODUCT=	nginx
 USE_GITHUB=	nodefault
 
+FLAVORS=	default cheri_subobj cheri_subobj_agg
+FLAVOR?=${FLAVORS:[1]}
+cheri_subobj_PKGNAMESUFFIX=	-subobj
+cheri_subobj_agg_PKGNAMESUFFIX=	-aggsubobj
+
 NGINX_VARDIR?=	/var
 NGINX_LOGDIR?=	${NGINX_VARDIR}/log/nginx
 NGINX_RUNDIR?=	${NGINX_VARDIR}/run
@@ -55,6 +60,13 @@ CONFIGURE_ARGS+=--prefix=${ETCDIR} \
 		--user=${WWWOWN} --group=${WWWGRP} \
 		--with-compat \
 		--with-pcre
+.if ${FLAVOR:U} == cheri_subobj
+CONFIGURE_ARGS+=	--with-cc-opt="-cheri-bounds=subobject-safe -DWITH_SUBOBJECT_SAFE"
+.endif
+.if ${FLAVOR:U} == cheri_subobj_agg
+CONFIGURE_ARGS+=	--with-cc-opt="-cheri-bounds=aggressive -DWITH_SUBOBJECT_SAFE -DWITH_SUBOBJECT_AGGRESSIVE"
+.endif
+
 ALL_TARGET=
 
 PLIST_SUB+=	NGINX_TMPDIR=${NGINX_TMPDIR} NGINX_LOGDIR=${NGINX_LOGDIR} WWWOWN=${WWWOWN} WWWGRP=${WWWGRP}

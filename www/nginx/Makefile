@@ -24,10 +24,10 @@ CPE_VENDOR=	f5
 CPE_PRODUCT=	nginx
 USE_GITHUB=	nodefault
 
-FLAVORS=	default cheri_subobj cheri_subobj_agg
+FLAVORS=	default subobj subobj_agg
 FLAVOR?=${FLAVORS:[1]}
-cheri_subobj_PKGNAMESUFFIX=	-subobj
-cheri_subobj_agg_PKGNAMESUFFIX=	-aggsubobj
+subobj_PKGNAMESUFFIX=	-subobj
+subobj_agg_PKGNAMESUFFIX=	-aggsubobj
 
 NGINX_VARDIR?=	/var
 NGINX_LOGDIR?=	${NGINX_VARDIR}/log/nginx
@@ -60,11 +60,13 @@ CONFIGURE_ARGS+=--prefix=${ETCDIR} \
 		--user=${WWWOWN} --group=${WWWGRP} \
 		--with-compat \
 		--with-pcre
-.if ${FLAVOR:U} == cheri_subobj
+.if ${FLAVOR:U} == subobj
 CONFIGURE_ARGS+=	--with-cc-opt="-cheri-bounds=subobject-safe -DWITH_SUBOBJECT_SAFE"
+EXTRA_PATCHES+=	${PATCHDIR}/cheribsd-subobject.patch
 .endif
-.if ${FLAVOR:U} == cheri_subobj_agg
+.if ${FLAVOR:U} == subobj_agg
 CONFIGURE_ARGS+=	--with-cc-opt="-cheri-bounds=aggressive -DWITH_SUBOBJECT_SAFE -DWITH_SUBOBJECT_AGGRESSIVE"
+EXTRA_PATCHES+=	${PATCHDIR}/cheribsd-subobject.patch
 .endif
 
 ALL_TARGET=
